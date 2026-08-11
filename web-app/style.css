@@ -234,6 +234,48 @@ body {
   border: 1px solid rgba(168, 85, 247, 0.2);
 }
 
+/* ===== COMBO BADGE ===== */
+.combo-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(231, 76, 60, 0.2);
+  color: #ff6b6b;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  animation: comboPulse 0.3s ease;
+}
+
+@keyframes comboPulse {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ===== ACHIEVEMENT POPUP ===== */
+.achievement-popup {
+  position: fixed;
+  top: 80px;
+  right: -350px;
+  background: linear-gradient(135deg, rgba(241, 196, 15, 0.15), rgba(168, 85, 247, 0.1));
+  border: 1px solid rgba(241, 196, 15, 0.4);
+  border-radius: 12px;
+  padding: 16px 24px;
+  color: var(--color-gold);
+  font-size: 0.9rem;
+  font-weight: 600;
+  z-index: 200;
+  transition: right 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  box-shadow: 0 4px 20px rgba(241, 196, 15, 0.2);
+  max-width: 300px;
+}
+
+.achievement-popup.show {
+  right: 20px;
+}
+
 /* ===== STATS PANEL ===== */
 .stats-panel {
   background: var(--bg-panel);
@@ -268,6 +310,27 @@ body {
 
 @media (max-width: 600px) {
   .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+}
+
+.stats-extra {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-extra-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--color-miss);
+}
+
+.stat-extra-row span:last-child {
+  color: var(--color-text);
+  font-weight: 600;
 }
 
 /* ===== HINT BAR ===== */

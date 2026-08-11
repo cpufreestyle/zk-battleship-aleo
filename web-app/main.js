@@ -127,7 +127,27 @@ const I18N = {
     hintScan: "📡 ZK 雷达扫描已激活！点击敌方海域选择 3x3 扫描区域，ZK 证明将告诉你该区域有多少战舰，但不暴露具体位置",
     hintScanEn: "📡 ZK Radar Scan active! Click enemy grid to select a 3x3 scan area. ZK proof will tell you how many ships are there, without revealing positions",
     hintScanResult: "📡 扫描完成：该区域有 {n} 格战舰 — 利用这个信息制定策略吧！",
-    hintScanResultEn: "📡 Scan complete: {n} ship cells found in that area — use this info strategically!",
+    hintScanResultEn: "📡 Scan complete: {n} ship cells found — use this info strategically!",
+    // Combo & ship sunk
+    combo: "🔥 连击 x{n}！命中后可继续射击！",
+    comboEn: "🔥 Combo x{n}! Hit again to keep firing!",
+    shipSunk: "💀 {name} 已被击沉！{cells} 格全部命中",
+    shipSunkEn: "💀 {name} sunk! All {cells} cells hit",
+    shipSunkOpponent: "💥 你的 {name} 被击沉！",
+    shipSunkOpponentEn: "💥 Your {name} has been sunk!",
+    comboBroken: "❌ 连击中断 — 对手回合",
+    comboBrokenEn: "❌ Combo broken — opponent's turn",
+    // Achievements
+    achFirstBlood: "🏅 首杀！First Blood!",
+    achFirstBloodEn: "🏅 First Blood!",
+    achCombo3: "🔥 三连击！Sniper!",
+    achCombo3En: "🔥 Triple Combo! Sniper!",
+    achCombo5: "⚡ 五连击！Unstoppable!",
+    achCombo5En: "⚡ Pentakill! Unstoppable!",
+    achPerfect: "🏆 完美胜利！零损失！",
+    achPerfectEn: "🏆 Perfect Victory! Zero losses!",
+    achFlawless: "⭐ 一击必杀！全命中！",
+    achFlawlessEn: "⭐ Flawless! All hits!",
   },
   en: {
     title: "Shadow Fleet",
@@ -254,6 +274,26 @@ const I18N = {
     hintScanEn: "📡 ZK Radar Scan active! Click enemy grid to select a 3x3 scan area. ZK proof tells you how many ships, without revealing positions",
     hintScanResult: "📡 Scan complete: {n} ship cells found — use this info strategically!",
     hintScanResultEn: "📡 Scan complete: {n} ship cells found — use this info strategically!",
+    // Combo & ship sunk
+    combo: "🔥 Combo x{n}! Keep firing!",
+    comboEn: "🔥 Combo x{n}! Keep firing!",
+    shipSunk: "💀 {name} sunk! All {cells} cells hit",
+    shipSunkEn: "💀 {name} sunk! All {cells} cells hit",
+    shipSunkOpponent: "💥 Your {name} has been sunk!",
+    shipSunkOpponentEn: "💥 Your {name} has been sunk!",
+    comboBroken: "❌ Combo broken — opponent's turn",
+    comboBrokenEn: "❌ Combo broken — opponent's turn",
+    // Achievements
+    achFirstBlood: "🏅 First Blood!",
+    achFirstBloodEn: "🏅 First Blood!",
+    achCombo3: "🔥 Triple Combo! Sniper!",
+    achCombo3En: "🔥 Triple Combo! Sniper!",
+    achCombo5: "⚡ Pentakill! Unstoppable!",
+    achCombo5En: "⚡ Pentakill! Unstoppable!",
+    achPerfect: "🏆 Perfect Victory! Zero losses!",
+    achPerfectEn: "🏆 Perfect Victory! Zero losses!",
+    achFlawless: "⭐ Flawless! All hits!",
+    achFlawlessEn: "⭐ Flawless! All hits!",
   },
 };
 
@@ -374,6 +414,12 @@ const state = {
   scanMode: false,
   stats: JSON.parse(localStorage.getItem("stats") || '{"wins":0,"losses":0,"shots":0,"hits":0,"turns":0}'),
   currentTurns: 0,
+  combo: 0,
+  maxCombo: 0,
+  opponentShipsList: [],
+  playerShipsList: [],
+  sunkShips: [],
+  achievements: [],
 };
 
 // ===== CONTEXTUAL HINTS =====
@@ -495,6 +541,7 @@ function isBitSet(bitstring, row, col) { return (bitstring & getMask(row, col)) 
 function generateRandomShips() {
   let ships = 0;
   const placed = [];
+  const shipList = [];
   for (const ship of SHIPS) {
     let placedShip = false;
     while (!placedShip) {
@@ -505,25 +552,64 @@ function generateRandomShips() {
       const col = Math.floor(Math.random() * maxCol);
       let bits = 0;
       let overlap = false;
+      const cells = [];
       for (let i = 0; i < ship.size; i++) {
         const r = horizontal ? row : row + i;
         const c = horizontal ? col + i : col;
         const bit = cellToBit(r, c);
         if (placed.includes(bit)) { overlap = true; break; }
         bits |= (1 << bit);
+        cells.push(bit);
       }
       if (!overlap) {
         ships |= bits;
-        for (let i = 0; i < ship.size; i++) {
-          const r = horizontal ? row : row + i;
-          const c = horizontal ? col + i : col;
-          placed.push(cellToBit(r, c));
-        }
+        for (const bit of cells) placed.push(bit);
+        shipList.push({ name: ship.name, size: ship.size, cells: cells, sunk: false });
         placedShip = true;
       }
     }
   }
+  // Store ship list in a global for the caller to pick up
+  window.__lastShipList = shipList;
   return ships;
+}
+
+// ===== SHIP SUNK DETECTION =====
+function checkShipSunk(shipList, hitsBitstring) {
+  const newlySunk = [];
+  for (const ship of shipList) {
+    if (ship.sunk) continue;
+    let allHit = true;
+    for (const cell of ship.cells) {
+      if (!(hitsBitstring & (1 << cell))) { allHit = false; break; }
+    }
+    if (allHit) {
+      ship.sunk = true;
+      newlySunk.push(ship);
+    }
+  }
+  return newlySunk;
+}
+
+// ===== ACHIEVEMENTS =====
+function unlockAchievement(key) {
+  if (state.achievements.includes(key)) return;
+  state.achievements.push(key);
+  showAchievementPopup(th(key));
+}
+
+let achievementTimeout = null;
+function showAchievementPopup(text) {
+  let popup = document.querySelector(".achievement-popup");
+  if (!popup) {
+    popup = document.createElement("div");
+    popup.className = "achievement-popup";
+    document.body.appendChild(popup);
+  }
+  popup.textContent = text;
+  popup.classList.add("show");
+  if (achievementTimeout) clearTimeout(achievementTimeout);
+  achievementTimeout = setTimeout(() => popup.classList.remove("show"), 3500);
 }
 
 // ===== GAME LOGIC =====
@@ -547,9 +633,37 @@ async function playerFire(row, col) {
     state.playerHits |= mask;
     state.opponentShipsRemaining--;
     state.stats.hits++;
-    updateHint("hintBattleHit");
+    state.combo++;
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
     SoundFX.hit();
+    
+    // Check for ship sunk
+    const sunkShips = checkShipSunk(state.opponentShipsList, state.playerHits);
+    if (sunkShips.length > 0) {
+      for (const s of sunkShips) {
+        state.sunkShips.push(s.name);
+        const hintText = th("shipSunk").replace("{name}", getShipName(s)).replace("{cells}", String(s.size));
+        state.currentHint = "__custom__";
+        state._customHint = hintText;
+      }
+      SoundFX.beep(150, 0.4, "square", 0.15);
+    } else if (state.combo >= 5) {
+      unlockAchievement("achCombo5");
+      state.currentHint = "__custom__";
+      state._customHint = th("combo").replace("{n}", String(state.combo));
+    } else if (state.combo >= 3) {
+      unlockAchievement("achCombo3");
+      state.currentHint = "__custom__";
+      state._customHint = th("combo").replace("{n}", String(state.combo));
+    } else {
+      state.currentHint = "__custom__";
+      state._customHint = th("combo").replace("{n}", String(state.combo));
+    }
+    
+    // First blood achievement
+    if (state.stats.hits === 1) unlockAchievement("achFirstBlood");
   } else {
+    state.combo = 0;
     updateHint("hintBattleMiss");
     SoundFX.miss();
   }
@@ -560,6 +674,9 @@ async function playerFire(row, col) {
     state.phase = "gameover";
     state.winner = "player";
     state.stats.wins++;
+    // Achievements
+    if (state.playerShipsRemaining === TOTAL_SHIP_CELLS) unlockAchievement("achPerfect");
+    if (state.stats.shots === state.stats.hits) unlockAchievement("achFlawless");
     saveStats();
     updateHint("hintVictory");
     SoundFX.victory();
@@ -567,10 +684,16 @@ async function playerFire(row, col) {
     return;
   }
 
-  state.currentTurn = "opponent";
-  updateHint("hintBattleOpponent");
-  render();
-  setTimeout(() => opponentFire(), 800);
+  // Combo system: hit = continue firing, miss = opponent's turn
+  if (isHit) {
+    // Player keeps firing — don't switch turn
+    render();
+  } else {
+    state.currentTurn = "opponent";
+    updateHint("hintBattleOpponent");
+    render();
+    setTimeout(() => opponentFire(), 800);
+  }
 }
 
 async function opponentFire() {
@@ -618,7 +741,17 @@ async function opponentFire() {
   if (isHit) {
     state.opponentHits |= mask;
     state.playerShipsRemaining--;
-    updateHint("hintBattleOpponentHit");
+    // Check player ship sunk
+    const sunkShips = checkShipSunk(state.playerShipsList, state.opponentHits);
+    if (sunkShips.length > 0) {
+      for (const s of sunkShips) {
+        const hintText = th("shipSunkOpponent").replace("{name}", getShipName(s));
+        state.currentHint = "__custom__";
+        state._customHint = hintText;
+      }
+    } else {
+      updateHint("hintBattleOpponentHit");
+    }
   } else {
     updateHint("hintBattleOpponentMiss");
   }
@@ -636,8 +769,14 @@ async function opponentFire() {
     return;
   }
 
-  state.currentTurn = "player";
-  render();
+  // Combo: opponent also gets extra shot on hit
+  if (isHit) {
+    setTimeout(() => opponentFire(), 800);
+  } else {
+    state.currentTurn = "player";
+    state.combo = 0;
+    render();
+  }
 }
 
 // ===== AI HELPERS =====
@@ -718,11 +857,13 @@ function handlePlacementClick(row, col) {
   for (const bit of cells) {
     state.playerShips |= (1 << bit);
   }
+  state.playerShipsList.push({ name: ship.name, size: ship.size, cells: cells, sunk: false });
   state.placingShipIndex++;
   SoundFX.place();
 
   if (state.placingShipIndex >= SHIPS.length) {
     state.opponentShips = generateRandomShips();
+    state.opponentShipsList = window.__lastShipList || [];
     state.phase = "battle";
     updateHint("hintBattleStart");
   } else if (state.placingShipIndex === 1) {
@@ -741,8 +882,10 @@ function togglePlacementDirection() {
 function randomPlacement() {
   if (state.phase !== "placement") return;
   state.playerShips = generateRandomShips();
+  state.playerShipsList = window.__lastShipList || [];
   state.placingShipIndex = SHIPS.length;
   state.opponentShips = generateRandomShips();
+  state.opponentShipsList = window.__lastShipList || [];
   state.phase = "battle";
   updateHint("hintBattleStart");
   SoundFX.place();
@@ -967,6 +1110,7 @@ function renderStatsPanel() {
   const total = state.stats.wins + state.stats.losses;
   const winRate = total > 0 ? Math.round(state.stats.wins / total * 100) : 0;
   const hitRate = state.stats.shots > 0 ? Math.round(state.stats.hits / state.stats.shots * 100) : 0;
+  const sunkNames = state.sunkShips.map(n => getShipName({ name: n })).join(", ") || "—";
   return `
     <div class="stats-panel">
       <h3 class="stats-title">${t("statsTitle")}</h3>
@@ -978,6 +1122,12 @@ function renderStatsPanel() {
         <div class="stat-item"><span class="stat-val">${hitRate}%</span><span class="stat-label">${t("hitRate")}</span></div>
         <div class="stat-item"><span class="stat-val">${state.currentTurns}</span><span class="stat-label">${t("turns")}</span></div>
       </div>
+      ${state.phase === "battle" || state.phase === "gameover" ? `
+        <div class="stats-extra">
+          <div class="stat-extra-row"><span>🔥 ${currentLang === "zh" ? "最高连击" : "Max Combo"}</span><span>${state.maxCombo}</span></div>
+          <div class="stat-extra-row"><span>💀 ${currentLang === "zh" ? "已击沉" : "Sunk"}</span><span>${sunkNames}</span></div>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -1056,7 +1206,7 @@ function renderStatusBar() {
     : `<span class="zk-badge zk-fallback">${t("zkLoading")}</span>`;
 
   return `
-    <div class="status-left">${status} ${state.phase === "battle" ? `<span class="diff-badge">${t(state.difficulty)}</span>` : ""}</div>
+    <div class="status-left">${status} ${state.phase === "battle" ? `<span class="diff-badge">${t(state.difficulty)}</span>` : ""} ${state.combo > 0 ? `<span class="combo-badge">🔥 x${state.combo}</span>` : ""}</div>
     <div class="status-right">
       ${zkStatus}
       ${state.aleoAddress ? `<span class="addr-badge">Aleo: ${state.aleoAddress.substring(0, 12)}...</span>` : ""}
@@ -1135,6 +1285,12 @@ window.selectGame = (difficulty, fleetSize) => {
   state.scansRemaining = 1;
   state.scanMode = false;
   state.currentTurns = 0;
+  state.combo = 0;
+  state.maxCombo = 0;
+  state.opponentShipsList = [];
+  state.playerShipsList = [];
+  state.sunkShips = [];
+  state.achievements = [];
   state.phase = "placement";
   updateHint("hintPlace1");
   render();
@@ -1154,6 +1310,12 @@ window.restart = () => {
   state.scansRemaining = 1;
   state.scanMode = false;
   state.currentTurns = 0;
+  state.combo = 0;
+  state.maxCombo = 0;
+  state.opponentShipsList = [];
+  state.playerShipsList = [];
+  state.sunkShips = [];
+  state.achievements = [];
   state.currentHint = "";
   render();
 };
