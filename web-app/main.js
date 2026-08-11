@@ -1,19 +1,52 @@
 import "./style.css";
 import "./zk.js";
+import { sfx } from "./audio.js";
+import * as fx from "./fx.js";
 
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
 const SHIPS = [
-  { size: 3, name: "Destroyer" },
-  { size: 2, name: "Frigate" },
-  { size: 2, name: "Submarine" },
+  { size: 3, name: "Destroyer", cn: "驱逐舰" },
+  { size: 2, name: "Frigate", cn: "护卫舰" },
+  { size: 2, name: "Submarine", cn: "潜艇" },
 ];
 const TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
 
+// ===== 手感节奏参数（毫秒）=====
+// ZK 走本地降级时 await 几乎瞬间返回，结果会「啪」地直接跳出来，非常突兀。
+// 这里给开火到出结果之间加一个悬念下限：真 ZK 慢就按真实耗时走，
+// 本地降级快就补到 SUSPENSE_MS，两种模式下节奏一致。
+const FEEL = {
+  LOCK_ON_MS: 150,    // 锁定预备态时长（先给「扣扳机」的确认感）
+  SUSPENSE_MS: 300,   // 开火 → 出结果的最短悬念
+  RESULT_HOLD_MS: 260,// 结果出来后停一拍，让爆炸/水波看得清
+  VICTORY_HOLD_MS: 620, // 决胜一击后延迟弹结算，别打断爆炸
+  INCOMING_MS: 820,   // 「敌方来袭」提示 → 对手真正开火
+};
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 输入闸：锁定/结算动画期间屏蔽连点，防止一次点两格
+let inputLocked = false;
+
+// 每艘船占哪些格（bit 掩码）—— 只用于判定「击沉」做反馈，
+// 不参与任何 ZK 输入，zkVerifyHit / zkVerifyVictory 的调用契约保持原样。
+let playerShipGroups = [];
+let opponentShipGroups = [];
+
+/** 这一发是否正好打沉了一整艘船？是则返回该船，否则 null */
+function sunkShipBy(groups, hitsBitstring, mask) {
+  for (const g of groups) {
+    if ((g.mask & mask) === 0) continue;
+    if ((hitsBitstring & g.mask) === g.mask) return g;
+  }
+  return null;
+}
+
 // ===== GAME STATE =====
 const state = {
-  phase: "loading",
+  phase: "start",
   playerShips: 0,
   playerShots: 0,
   playerHits: 0,
@@ -28,6 +61,7 @@ const state = {
   placementDirection: "horizontal",
   aleoAddress: null,
   proofLog: [],
+  battleLog: [],
   zkEnabled: false,
 };
 
@@ -98,6 +132,7 @@ function isBitSet(bitstring, row, col) { return (bitstring & getMask(row, col)) 
 function generateRandomShips() {
   let ships = 0;
   const placed = [];
+  opponentShipGroups = [];
   for (const ship of SHIPS) {
     let placedShip = false;
     while (!placedShip) {
@@ -122,6 +157,7 @@ function generateRandomShips() {
           const c = horizontal ? col + i : col;
           placed.push(cellToBit(r, c));
         }
+        opponentShipGroups.push({ name: ship.name, cn: ship.cn, mask: bits });
         placedShip = true;
       }
     }
@@ -129,61 +165,188 @@ function generateRandomShips() {
   return ships;
 }
 
+// ===== OPPONENT AI (hunting / targeting) =====
+// HUNT: parity pattern to locate ships. TARGET: after a hit, fire orthogonal
+// neighbors to sink the ship, then fall back to HUNT when candidates run out.
+const ai = { mode: "hunt", targets: [], lastHit: null };
+
+function resetAI() {
+  ai.mode = "hunt";
+  ai.targets = [];
+  ai.lastHit = null;
+}
+
+function chooseOpponentTarget() {
+  const shot = state.opponentShots;
+  if (ai.mode === "target" && ai.targets.length > 0) {
+    while (ai.targets.length > 0) {
+      const bit = ai.targets.pop();
+      if (!(shot & (1 << bit))) return bit;
+    }
+  }
+  const parity = [];
+  const rest = [];
+  for (let i = 0; i < TOTAL_CELLS; i++) {
+    if (shot & (1 << i)) continue;
+    if ((Math.floor(i / GRID_SIZE) + (i % GRID_SIZE)) % 2 === 0) parity.push(i);
+    else rest.push(i);
+  }
+  const pool = parity.length ? parity : rest;
+  if (pool.length === 0) return -1;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 // ===== GAME LOGIC =====
 async function playerFire(row, col) {
   if (state.phase !== "battle" || state.currentTurn !== "player") return;
+  if (inputLocked) return;
   const mask = getMask(row, col);
   if (state.playerShots & mask) return;
 
+  inputLocked = true;
+  const k = fx.key("opponent", row, col);
+  const cellName = String.fromCharCode(65 + col) + (row + 1);
+
+  // 立刻标记已射击（防重复开火），但先【不】render ——
+  // 因为 renderGrid 由 shots/hits 推导外观，此刻 hits 还未知，
+  // 提前渲染会先把格子画成「未中 🌊」再改成命中，穿帮。
   state.playerShots |= mask;
-  const isHit = await zkVerifyHit(state.opponentShips, mask);
+
+  // 手感第 1 拍：扣扳机 —— 音效 + 锁定环，先给确认反馈
+  sfx.fire();
+  fx.lockOn(k, FEEL.LOCK_ON_MS + 170);
+
+  // 手感第 2 拍：悬念。ZK 与最短等待并行，取较慢者。
+  // 真 ZK 慢 → 按真实耗时；本地降级快 → 补足 SUSPENSE_MS，节奏统一。
+  const [isHit] = await Promise.all([
+    zkVerifyHit(state.opponentShips, mask),
+    wait(FEEL.SUSPENSE_MS),
+  ]);
+
+  addBattle(`你向 ${cellName} 开火`, "me");
+
+  // 手感第 3 拍：结果爆发
+  let sunkShip = null;
   if (isHit) {
     state.playerHits |= mask;
     state.opponentShipsRemaining--;
+    sunkShip = sunkShipBy(opponentShipGroups, state.playerHits, mask);
+    if (sunkShip) {
+      addBattle(`🔥 ${cellName} 命中——敌方${sunkShip.cn}已被击沉！`, "hit");
+      sfx.sunk();
+      fx.explode(k, true);
+      fx.shake("hard");
+      fx.banner(`击沉 敌方${sunkShip.cn}`, "sunk", 1200);
+    } else {
+      addBattle(`💥 ${cellName} 命中！敌方一艘船受损`, "hit");
+      sfx.hit(false);
+      fx.explode(k, false);
+      fx.shake("soft");
+    }
+  } else {
+    addBattle(`🌊 ${cellName} 未中。`, "miss");
+    sfx.miss();
+    fx.ripple(k);
   }
   render();
 
   const victory = await zkVerifyVictory(state.opponentShips, state.playerHits);
   if (victory) {
+    await wait(FEEL.VICTORY_HOLD_MS); // 让最后的爆炸放完再弹结算
     state.phase = "gameover";
     state.winner = "player";
+    sfx.victory();
     render();
+    inputLocked = false;
     return;
   }
 
+  // 手感第 4 拍：结果沉淀一拍再交出回合
+  await wait(sunkShip ? FEEL.RESULT_HOLD_MS + 220 : FEEL.RESULT_HOLD_MS);
+  if (state.phase !== "battle") { inputLocked = false; return; }
+
   state.currentTurn = "opponent";
   render();
-  setTimeout(() => opponentFire(), 800);
+
+  // 回合切换：先预警再挨打，别让对手凭空冒出来
+  fx.banner("⚠ 敌方来袭", "warn", FEEL.INCOMING_MS);
+  sfx.incoming();
+  setTimeout(() => opponentFire(), FEEL.INCOMING_MS);
 }
 
 async function opponentFire() {
   if (state.phase !== "battle") return;
-  const available = [];
-  for (let i = 0; i < TOTAL_CELLS; i++) {
-    if (!(state.opponentShots & (1 << i))) available.push(i);
-  }
-  if (available.length === 0) return;
-  const target = available[Math.floor(Math.random() * available.length)];
+  const target = chooseOpponentTarget();
+  if (target === -1) { inputLocked = false; return; }
+  const row = Math.floor(target / GRID_SIZE);
+  const col = target % GRID_SIZE;
+  const cellName = String.fromCharCode(65 + col) + (row + 1);
   const mask = 1 << target;
+  const k = fx.key("player", row, col);
 
   state.opponentShots |= mask;
-  const isHit = await zkVerifyHit(state.playerShips, mask);
+
+  // 对手同样走「锁定 → 悬念 → 结果」三拍，节奏与玩家侧对称
+  sfx.fire();
+  fx.lockOn(k, FEEL.LOCK_ON_MS + 170);
+
+  const [isHit] = await Promise.all([
+    zkVerifyHit(state.playerShips, mask),
+    wait(FEEL.SUSPENSE_MS),
+  ]);
+
+  addBattle(`对手向 ${cellName} 开火`, "opp");
+  let sunkShip = null;
   if (isHit) {
     state.opponentHits |= mask;
     state.playerShipsRemaining--;
+    sunkShip = sunkShipBy(playerShipGroups, state.opponentHits, mask);
+    if (sunkShip) {
+      addBattle(`🔥 你的${sunkShip.cn}被击沉！`, "hit");
+      sfx.sunk();
+      fx.explode(k, true);
+      fx.shake("hard");
+      fx.banner(`我方${sunkShip.cn} 沉没`, "loss", 1200);
+    } else {
+      addBattle(`💥 你的 ${cellName} 中弹！`, "hit");
+      sfx.hit(false);
+      fx.explode(k, false);
+      fx.shake("soft");
+    }
+    ai.mode = "target";
+    ai.targets = ai.targets.filter(b => b !== target);
+    const neigh = [[row - 1, col], [row + 1, col], [row, col - 1], [row, col + 1]];
+    for (const [nr, nc] of neigh) {
+      if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) continue;
+      const b = nr * GRID_SIZE + nc;
+      if (!(state.opponentShots & (1 << b)) && !ai.targets.includes(b)) ai.targets.push(b);
+    }
+  } else {
+    addBattle(`🌊 对手 ${cellName} 未中。`, "miss");
+    sfx.miss();
+    fx.ripple(k);
+    if (ai.mode === "target" && ai.targets.length === 0) ai.mode = "hunt";
   }
   render();
 
   const victory = await zkVerifyVictory(state.playerShips, state.opponentHits);
   if (victory) {
+    await wait(FEEL.VICTORY_HOLD_MS);
     state.phase = "gameover";
     state.winner = "opponent";
+    sfx.defeat();
     render();
+    inputLocked = false;
     return;
   }
 
+  // 交还回合前也停一拍，让玩家看清自己挨了哪一下
+  await wait(sunkShip ? FEEL.RESULT_HOLD_MS + 220 : FEEL.RESULT_HOLD_MS);
+  if (state.phase !== "battle") { inputLocked = false; return; }
+
   state.currentTurn = "player";
   render();
+  inputLocked = false;
 }
 
 // ===== SHIP PLACEMENT UI =====
@@ -197,24 +360,44 @@ function handlePlacementClick(row, col) {
   for (let i = 0; i < ship.size; i++) {
     const r = horizontal ? row : row + i;
     const c = horizontal ? col + i : col;
-    if (r >= GRID_SIZE || c >= GRID_SIZE) { render(); return; }
-    if (isBitSet(state.playerShips, r, c)) { render(); return; }
+    // 越界 / 压到已有船 → 明确的「拒绝」反馈，而不是默默无事发生
+    if (r >= GRID_SIZE || c >= GRID_SIZE) { sfx.deny(); fx.shake("soft"); render(); return; }
+    if (isBitSet(state.playerShips, r, c)) { sfx.deny(); fx.shake("soft"); render(); return; }
     cells.push(cellToBit(r, c));
   }
 
+  let groupMask = 0;
   for (const bit of cells) {
     state.playerShips |= (1 << bit);
+    groupMask |= (1 << bit);
   }
+  playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: groupMask });
   state.placingShipIndex++;
+  const placedName = ship.cn || ship.name;
+
+  sfx.place();
+  render();
+  // render 之后再放特效：此时格子已是 .cell-ship，落位闪光贴在最终位置上
+  for (const bit of cells) {
+    const { row: r, col: c } = bitToCell(bit);
+    fx.lockOn(fx.key("player", r, c), 420);
+  }
 
   if (state.placingShipIndex >= SHIPS.length) {
     state.opponentShips = generateRandomShips();
     state.phase = "battle";
+    resetAI();
+    addBattle(`你放置了 ${placedName}`, "me");
+    addBattle("舰队部署完成，战斗开始！", "sys");
+    fx.banner("舰队就位 · 开战", "sunk", 1100);
+  } else {
+    addBattle(`你放置了 ${placedName}`, "me");
   }
   render();
 }
 
 function togglePlacementDirection() {
+  sfx.click();
   state.placementDirection = state.placementDirection === "horizontal" ? "vertical" : "horizontal";
   render();
 }
@@ -222,8 +405,8 @@ function togglePlacementDirection() {
 // ===== RENDERING =====
 function render() {
   const app = document.querySelector("#app");
-  if (state.phase === "loading") {
-    app.innerHTML = renderLoading();
+  if (state.phase === "start") {
+    app.innerHTML = renderStart();
     return;
   }
   app.innerHTML = `
@@ -234,40 +417,60 @@ function render() {
       </header>
       <div class="game-main">
         <div class="board-section">
-          <h2>Your Fleet ${state.phase === "placement" ? "— Place Your Ships" : ""}</h2>
+          <h2>我方舰队 ${state.phase === "placement" ? "— 放置你的舰船" : ""}<span class="fleet-shield${state.zkEnabled ? "" : " is-fallback"}">🔒 船位已加密保护</span></h2>
           <p class="board-info">
             ${state.phase === "placement"
-              ? `Placing: ${SHIPS[state.placingShipIndex]?.name || "Done"} (${SHIPS[state.placingShipIndex]?.size || 0} cells) — Direction: ${state.placementDirection}`
-              : `Ships remaining: ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}`
+              ? `放置中：${SHIPS[state.placingShipIndex]?.cn || "完成"}（${SHIPS[state.placingShipIndex]?.size || 0} 格）— 方向：${state.placementDirection === "horizontal" ? "横向" : "纵向"}`
+              : `剩余舰船：${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}`
             }
           </p>
           ${renderGrid("player")}
-          ${state.phase === "placement" ? '<button class="dir-btn" onclick="window.toggleDir()">↻ Rotate</button>' : ""}
+          ${state.phase === "placement" ? '<button class="dir-btn" onclick="window.toggleDir()">↻ 旋转</button>' : ""}
         </div>
         <div class="board-section">
-          <h2>Enemy Waters ${state.phase === "battle" ? "— Click to Fire" : ""}</h2>
+          <h2>敌方海域 ${state.phase === "battle" ? "— 点击开火" : ""}</h2>
           <p class="board-info">
             ${state.phase === "battle"
-              ? `Ships remaining: ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS}`
-              : state.phase === "gameover" ? "Game Over" : "Waiting for battle..."
+              ? `敌方剩余舰船：${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS}`
+              : state.phase === "gameover" ? "战斗结束" : "等待开战…"
             }
           </p>
           ${renderGrid("opponent")}
         </div>
       </div>
-      <div class="status-bar">${renderStatusBar()}</div>
+      <div class="status-bar${state.phase === "battle" && state.currentTurn === "opponent" ? " is-opp" : ""}">${renderStatusBar()}</div>
+      <div class="battle-feed">${renderBattleFeed()}</div>
       <div class="proof-panel">${renderProofPanel()}</div>
       ${state.phase === "gameover" ? renderGameOver() : ""}
     </div>
   `;
+  // 全量 innerHTML 重写会把棋盘整个换掉，格子的屏幕坐标可能变。
+  // 通知特效层重新量一遍并贴回去 —— 详见 fx.js 顶部说明。
+  fx.afterRender();
 }
 
-function renderLoading() {
+function renderStart() {
   return `
-    <div class="loading-screen">
-      <div class="loading-spinner"></div>
-      <h2>Initializing ZK Engine...</h2>
-      <p>Loading Aleo WebAssembly runtime for zero-knowledge proof generation</p>
+    <div class="start-screen">
+      <div class="start-card">
+        <h1 class="start-title">隐海战舰 <span class="subtitle">SHADOW FLEET</span></h1>
+        <p class="tagline">ZK Battleship on Aleo — 零知识海战棋</p>
+        <div class="how-to">
+          <div class="how-step">
+            <span class="step-num">1</span>
+            <div><b>部署舰队</b><br>在 5×5 棋盘上点格子放 3 艘船（驱逐舰 3 格 / 护卫舰 2 格 / 潜艇 2 格），可用 ↻ 旋转方向。</div>
+          </div>
+          <div class="how-step">
+            <span class="step-num">2</span>
+            <div><b>开火对决</b><br>点敌方海域开火，💥 命中 / 🌊 未中。每发都由零知识证明验证，船位绝不泄露。</div>
+          </div>
+          <div class="how-step">
+            <span class="step-num">3</span>
+            <div><b>击沉获胜</b><br>打光对方 7 个船格即获胜，对手也会随机还击。</div>
+          </div>
+        </div>
+        <button class="start-btn" onclick="window.startGame()">开始游戏</button>
+      </div>
     </div>
   `;
 }
@@ -312,7 +515,9 @@ function renderGrid(side) {
         ? `onclick="window.placeShip(${r}, ${c})"`
         : `onclick="window.fireAt(${r}, ${c})"`;
 
-      html += `<div class="${cls}" ${clickable ? onclick : ""}>${content}</div>`;
+      // data-cell 是特效层定位格子的唯一锚点（fx.key(side,row,col)）。
+      // 节点每次 render 都会重建，但 key 不变，所以特效能重新找到它。
+      html += `<div class="${cls}" data-cell="${side}-${r}-${c}" ${clickable ? onclick : ""}>${content}</div>`;
     }
     html += `</div>`;
   }
@@ -323,42 +528,53 @@ function renderGrid(side) {
 function renderStatusBar() {
   let status = "";
   if (state.phase === "placement") {
-    status = `🚢 Ship Placement — Place all ${SHIPS.length} ships to begin`;
+    status = `🚢 部署阶段 — 放完 ${SHIPS.length} 艘船即可开战`;
   } else if (state.phase === "battle") {
     status = state.currentTurn === "player"
-      ? "🎯 Your turn — Click enemy waters to fire"
-      : "⏳ Opponent is calculating ZK proof...";
+      ? "🎯 你的回合 — 点击敌方海域开火"
+      : "⏳ 对手正在计算命中…";
   } else if (state.phase === "gameover") {
-    status = state.winner === "player" ? "🏆 Victory! Enemy fleet destroyed!" : "💀 Defeat! Your fleet was sunk.";
+    status = state.winner === "player" ? "🏆 胜利！敌方舰队已被全歼！" : "💀 失败！你的舰队沉没了。";
   }
 
   const zkStatus = state.zkEnabled
-    ? '<span class="zk-badge zk-active">⚡ Aleo ZK: ACTIVE</span>'
-    : '<span class="zk-badge zk-fallback">⚠ Aleo ZK: Loading...</span>';
+    ? '<span class="zk-badge zk-active">🔒 零知识验证 · 已启用</span>'
+    : '<span class="zk-badge zk-fallback">⚠ 本地校验模式</span>';
 
   return `
     <div class="status-left">${status}</div>
     <div class="status-right">
       ${zkStatus}
       ${state.aleoAddress ? `<span class="addr-badge">Aleo: ${state.aleoAddress.substring(0, 12)}...</span>` : ""}
-    </div>
-  `;
+    </div>`;
 }
 
 function renderProofPanel() {
-  const privacyNote = `
+  const privacyNote = state.zkEnabled
+    ? `
     <div class="privacy-note">
-      <h3>🔐 Zero-Knowledge Privacy Guarantee</h3>
-      <p>Ship positions are <strong>private inputs</strong> to the Aleo ZK program. The <code>verify_hit</code> function proves a hit/miss is correct
-      <strong>without revealing</strong> the ship bitstring. Only the boolean result is public.</p>
-    </div>
-  `;
+      <div class="pn-icon" aria-hidden="true">🔒</div>
+      <div class="pn-body">
+        <h3>船位零知识加密保护已启用</h3>
+        <p>你的船位作为 ZK 程序的<strong>私有输入</strong>被加密保护——每一发命中/未中都由零知识证明验证，<strong>游戏过程中绝不向对手泄露</strong>船的位置。</p>
+      </div>
+    </div>`
+    : `
+    <div class="privacy-note is-fallback">
+      <div class="pn-icon" aria-hidden="true">⚠</div>
+      <div class="pn-body">
+        <h3>本局未启用零知识加密（本地校验模式）</h3>
+        <p>当前为本地降级模式，命中判定由本地计算得出，<strong>船位并未经过零知识加密保护</strong>。配置好 Aleo 网络后将自动启用。</p>
+      </div>
+    </div>`;
 
-  if (state.proofLog.length === 0) {
-    return privacyNote + `<div class="proof-empty">No ZK proofs generated yet. Start firing to generate zero-knowledge proofs!</div>`;
-  }
+  const summary = state.zkEnabled
+    ? "🔒 本回合命中已由零知识证明验证 — 点开看原始密码学数据"
+    : "⚠ 当前为本地降级模式，未运行真·零知识证明 — 点开看日志";
 
-  const logHtml = state.proofLog.map(entry => `
+  const logHtml = state.proofLog.length === 0
+    ? '<div class="proof-empty">还没有生成证明，开火后会出现在这里。</div>'
+    : state.proofLog.map(entry => `
     <div class="proof-entry ${entry.zkProof ? "zk-real" : "zk-fallback"}">
       <div class="proof-header">
         <span class="proof-func">${entry.function}()</span>
@@ -376,7 +592,11 @@ function renderProofPanel() {
     </div>
   `).join("");
 
-  return privacyNote + `<div class="proof-log">${logHtml}</div>`;
+  return privacyNote + `
+    <details class="proof-collapsible">
+      <summary>${summary}</summary>
+      <div class="proof-log">${logHtml}</div>
+    </details>`;
 }
 
 function renderProofLog() {
@@ -384,14 +604,38 @@ function renderProofLog() {
   if (panel) panel.innerHTML = renderProofPanel();
 }
 
+// ===== BATTLE FEED (human-language combat log) =====
+function addBattle(text, type = "sys") {
+  state.battleLog.unshift({ text, type, time: new Date().toLocaleTimeString() });
+  if (state.battleLog.length > 8) state.battleLog.pop();
+}
+
+function renderBattleFeed() {
+  const list = state.battleLog.length
+    ? state.battleLog.map(e => `
+      <div class="battle-entry battle-${e.type}">
+        <span class="battle-time">${e.time}</span>
+        <span class="battle-text">${e.text}</span>
+      </div>`).join("")
+    : '<div class="battle-empty">放船开火后，这里会实时播报战况。</div>';
+  return `
+    <div class="battle-feed-head">
+      <h3>⚔ 战斗实况</h3>
+      <span class="battle-score">敌方舰剩 ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS} · 我方舰剩 ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}</span>
+    </div>
+    <div class="battle-list">${list}</div>`;
+}
+
 function renderGameOver() {
   return `
     <div class="game-over-overlay">
-      <div class="game-over-modal">
-        <h2>${state.winner === "player" ? "🏆 VICTORY" : "💀 DEFEAT"}</h2>
-        <p>${state.winner === "player" ? "You sunk the enemy fleet!" : "Your fleet was destroyed."}</p>
-        <p class="proof-summary">All hit/miss results were verified via Aleo zero-knowledge proofs.</p>
-        <button class="restart-btn" onclick="window.restart()">Play Again</button>
+      <div class="game-over-modal ${state.winner === "player" ? "over-win" : "over-lose"}">
+        <h2>${state.winner === "player" ? "🏆 胜 利" : "💀 战 败"}</h2>
+        <p>${state.winner === "player" ? "敌方舰队已被你全部击沉！" : "你的舰队全军覆没。"}</p>
+        <p class="proof-summary">${state.zkEnabled
+          ? "本局每一发的命中判定，都由 Aleo 零知识证明验证 —— 双方船位全程未泄露。"
+          : "本局运行在本地校验模式（零知识引擎未启用），命中判定由本地计算完成。"}</p>
+        <button class="restart-btn" onclick="window.restart()">再来一局</button>
       </div>
     </div>
   `;
@@ -401,8 +645,21 @@ function renderGameOver() {
 window.placeShip = handlePlacementClick;
 window.fireAt = playerFire;
 window.toggleDir = togglePlacementDirection;
-window.restart = () => {
+window.startGame = () => {
+  // 浏览器自动播放策略：AudioContext 只能在用户手势里创建/resume。
+  // 「开始游戏」这一次点击就是全局唯一的音频解锁点。
+  sfx.init();
+  sfx.click();
   state.phase = "placement";
+  render();
+};
+window.restart = () => {
+  sfx.click();
+  fx.clear();
+  inputLocked = false;
+  playerShipGroups = [];
+  opponentShipGroups = [];
+  state.phase = "start";
   state.playerShips = 0;
   state.playerShots = 0;
   state.playerHits = 0;
@@ -416,42 +673,33 @@ window.restart = () => {
   state.placingShipIndex = 0;
   state.placementDirection = "horizontal";
   state.proofLog = [];
+  state.battleLog = [];
+  resetAI();
   render();
 };
 
 // ===== INITIALIZATION =====
-// Start in fallback mode, switch to ZK when WASM is ready
-setTimeout(() => {
-  if (state.phase === "loading") {
-    state.zkEnabled = false;
-    state.phase = "placement";
-    render();
-  }
-}, 3000);
+// 静音开关挂到 <body>（不在 #app 内 → 不会被全量重渲染冲掉）。
+// 这里只建 DOM，不碰 AudioContext，符合自动播放策略。
+sfx.mountToggle();
 
-// Listen for ZK engine ready event (or check if already ready)
+// 打开即开始页，无需 loading 引导。ZK 引擎在后台异步加载，
+// 就绪（或失败降级）由下方事件监听更新状态并局部刷新，不挡玩家。
 if (window.__zkReady) {
   state.zkEnabled = true;
   state.aleoAddress = window.__zkAddress;
-  state.phase = "placement";
-  render();
-} else {
-  window.addEventListener("zk-ready", () => {
-    state.zkEnabled = true;
-    state.aleoAddress = window.__zkAddress;
-    if (state.phase === "loading") {
-      state.phase = "placement";
-    }
-    render();
-  });
-
-  window.addEventListener("zk-error", () => {
-    if (state.phase === "loading") {
-      state.zkEnabled = false;
-      state.phase = "placement";
-      render();
-    }
-  });
 }
-
 render();
+
+window.addEventListener("zk-ready", () => {
+  state.zkEnabled = true;
+  state.aleoAddress = window.__zkAddress;
+  render();
+});
+
+window.addEventListener("zk-error", () => {
+  if (!state.zkEnabled) {
+    state.zkEnabled = false;
+    render();
+  }
+});
