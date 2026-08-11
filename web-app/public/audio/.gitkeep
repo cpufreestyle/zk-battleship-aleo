@@ -1,0 +1,20 @@
+音频资源目录（资源管线约定）
+
+当前状态：本作全部音效为 WebAudio 程序化合成（无采样文件），本目录暂时为空。
+保留目录是为了后续加 BGM / 语音 / 采样音效时有固定落点，不用临时改构建配置。
+
+约定
+----
+放这里（public/audio/）：
+  · 体积大、按需 fetch 的资源，典型是 BGM（.ogg 优先，.mp3 兜底 Safari）
+  · 构建时原样拷贝到 dist/audio/，URL 稳定不带哈希
+  · 代码里用相对路径引用：new Audio("./audio/bgm-battle.ogg")
+    —— 必须用 "./" 开头，因为 base 是相对路径，绝对路径 "/audio/..." 在
+       itch.io / GitHub Pages 子目录下会 404
+
+命名：<用途>-<变体>.<ext>，全小写连字符
+  bgm-battle.ogg / bgm-title.ogg
+  sfx-hit.ogg / sfx-miss.ogg / sfx-sink.ogg
+
+浏览器自动播放策略：音频上下文必须由用户手势（点击"开始游戏"）解锁，
+不要在页面加载时就 new AudioContext().resume()，会被静音拦截。

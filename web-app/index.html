@@ -4,7 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>隐海战舰 — Shadow Fleet | ZK Battleship on Aleo</title>
-    <meta name="description" content="零知识战舰游戏，基于 Aleo 区块链 — 战舰位置受 ZK 证明保护 / Zero-knowledge Battleship game built on Aleo blockchain — ship positions are private, verified by ZK proofs" />
+    <meta name="description" content="Zero-knowledge Battleship game built on Aleo blockchain — ship positions are private, verified by ZK proofs" />
+    <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
+
+    <!--
+      跨源隔离引导（COOP/COEP）—— 必须在 main.js 之前以「经典脚本」同步执行。
+
+      Aleo wasm 无条件使用共享内存，需要页面处于 crossOriginIsolated 状态。
+      各托管环境的情况：
+        · 本机 vite dev/preview  → vite.config.js 已下发 COOP/COEP，本脚本直接退出
+        · itch.io                → 需在项目设置 Embed Options → Frame Options
+                                   勾选 "SharedArrayBuffer support"，勾了就自带头
+        · GitHub Pages / CloudStudio → 不能自定义响应头，靠本脚本用 Service Worker
+                                        合成响应头来恢复隔离
+        · Netlify / Cloudflare Pages → public/_headers 已配
+        · Vercel                 → vercel.json 已配
+
+      无论以上哪条路径失败，zk.js 都会探测到并干净降级到本地校验，
+      游戏保持可玩，不会白屏或卡死。加 ?nocoi=1 可强制关闭本脚本用于对比测试。
+    -->
+    <script src="./coi-serviceworker.js"></script>
   </head>
   <body>
     <div id="app"></div>

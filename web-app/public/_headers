@@ -1,0 +1,17 @@
+# Netlify / Cloudflare Pages 响应头配置
+#
+# 这两个头让页面进入 crossOriginIsolated 状态，Aleo wasm 的共享内存才能创建。
+# 没有它们，zk.js 会探测到并降级到本地校验（游戏仍可玩，但不是真 ZK）。
+#
+# 注意：GitHub Pages 和 itch.io 不读这个文件。
+#   · GitHub Pages / CloudStudio → 靠 public/coi-serviceworker.js 兜底
+#   · itch.io → 在项目设置里勾 Embed Options → Frame Options → SharedArrayBuffer support
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: cross-origin
+
+# wasm 带哈希文件名，可长期强缓存
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
