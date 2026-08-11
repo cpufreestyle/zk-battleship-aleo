@@ -53,9 +53,15 @@ const I18N = {
     chinese: "中文",
     english: "English",
     close: "关闭",
-    htp1: "在左侧网格点击放置 3 艘战舰",
-    htp2: "点击右侧敌方海域开火",
-    htp3: "每次开火生成 ZK 零知识证明，验证命中/未命中且不暴露战舰位置",
+    htp1: "在左侧「你的舰队」网格点击放置战舰，共 3 艘",
+    htp2: "点击「旋转方向」按钮切换横向/纵向放置",
+    htp3: "放完 3 艘后自动进入战斗，点击右侧敌方海域开火",
+    htpBattle1: "点击右侧敌方海域的格子开火，💥=命中 🌊=未命中",
+    htpBattle2: "每次开火生成 ZK 零知识证明，验证结果但不暴露战舰位置",
+    htpBattle3: "击沉敌方全部 7 格战舰即获胜！",
+    htpEnd1: "点击「再来一局」重新开始游戏",
+    htpEnd2: "所有命中/未命中结果均通过 Aleo 零知识证明验证",
+    htpTitle: "📋 操作指南 — How to Play",
   },
   en: {
     title: "Shadow Fleet",
@@ -107,9 +113,15 @@ const I18N = {
     chinese: "中文",
     english: "English",
     close: "Close",
-    htp1: "Place 3 ships on the left grid",
-    htp2: "Click enemy waters on the right to fire",
-    htp3: "Each shot generates a ZK proof verifying hit/miss without revealing ship positions",
+    htp1: "Click the left grid to place 3 ships",
+    htp2: "Click \"Rotate\" to switch between horizontal/vertical",
+    htp3: "After placing all 3 ships, battle starts — click enemy waters to fire",
+    htpBattle1: "Click enemy grid cells to fire, 💥=Hit 🌊=Miss",
+    htpBattle2: "Each shot generates a ZK proof — verifies result without revealing ship positions",
+    htpBattle3: "Sink all 7 enemy ship cells to win!",
+    htpEnd1: "Click \"Play Again\" to restart",
+    htpEnd2: "All hit/miss results verified via Aleo zero-knowledge proofs",
+    htpTitle: "📋 How to Play",
   },
 };
 
@@ -386,7 +398,7 @@ function render() {
           <a href="https://shadowfleet.vercel.app" target="_blank" class="header-link">🚀 Live Demo</a>
         </div>
       </header>
-      ${state.phase === "placement" ? renderHowToPlay() : ""}
+      ${renderHowToPlay()}
       <div class="game-main">
         <div class="board-section">
           <h2>${t("yourFleet")} ${state.phase === "placement" ? t("placeYourShips") : ""}</h2>
@@ -422,22 +434,64 @@ function render() {
 }
 
 function renderHowToPlay() {
-  return `
-    <div class="how-to-play">
-      <div class="htp-item">
-        <span class="htp-num">1</span>
-        <span class="htp-text">${t("htp1")}</span>
+  if (state.phase === "placement") {
+    return `
+      <div class="how-to-play">
+        <h3 class="htp-title">${t("htpTitle")}</h3>
+        <div class="htp-steps">
+          <div class="htp-item">
+            <span class="htp-num">1</span>
+            <span class="htp-text">${t("htp1")}</span>
+          </div>
+          <div class="htp-item">
+            <span class="htp-num">2</span>
+            <span class="htp-text">${t("htp2")}</span>
+          </div>
+          <div class="htp-item">
+            <span class="htp-num">3</span>
+            <span class="htp-text">${t("htp3")}</span>
+          </div>
+        </div>
       </div>
-      <div class="htp-item">
-        <span class="htp-num">2</span>
-        <span class="htp-text">${t("htp2")}</span>
+    `;
+  } else if (state.phase === "battle") {
+    return `
+      <div class="how-to-play">
+        <h3 class="htp-title">${t("htpTitle")}</h3>
+        <div class="htp-steps">
+          <div class="htp-item">
+            <span class="htp-num">1</span>
+            <span class="htp-text">${t("htpBattle1")}</span>
+          </div>
+          <div class="htp-item">
+            <span class="htp-num">2</span>
+            <span class="htp-text">${t("htpBattle2")}</span>
+          </div>
+          <div class="htp-item">
+            <span class="htp-num">3</span>
+            <span class="htp-text">${t("htpBattle3")}</span>
+          </div>
+        </div>
       </div>
-      <div class="htp-item">
-        <span class="htp-num">3</span>
-        <span class="htp-text">${t("htp3")}</span>
+    `;
+  } else if (state.phase === "gameover") {
+    return `
+      <div class="how-to-play">
+        <h3 class="htp-title">${t("htpTitle")}</h3>
+        <div class="htp-steps">
+          <div class="htp-item">
+            <span class="htp-num">1</span>
+            <span class="htp-text">${t("htpEnd1")}</span>
+          </div>
+          <div class="htp-item">
+            <span class="htp-num">2</span>
+            <span class="htp-text">${t("htpEnd2")}</span>
+          </div>
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  }
+  return "";
 }
 
 function renderSettingsPanel() {
