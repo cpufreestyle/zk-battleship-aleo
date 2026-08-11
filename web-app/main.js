@@ -679,11 +679,11 @@ function saveStats() {
 // ===== ZK RADAR SCAN =====
 async function playerScan(row, col) {
   state.scanMode = false;
+  state.scansRemaining = 0;
   const scanMask = build3x3Mask(row, col);
   SoundFX.scan();
   const count = await zkScanArea(state.opponentShips, scanMask);
   const hintKey = "hintScanResult";
-  state.currentHint = hintKey;
   // Use custom hint with parameter
   const hintText = th(hintKey).replace("{n}", String(count));
   state.currentHint = "__custom__";
@@ -1025,8 +1025,9 @@ function renderGrid(side) {
 
       const clickable =
         (state.phase === "placement" && isPlayer) ||
-        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && !isBitSet(shots, r, c));
+        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && (state.scanMode || !isBitSet(shots, r, c)));
       if (clickable) cls += " cell-clickable";
+      if (state.scanMode && !isPlayer) cls += " cell-scan";
 
       const onclick = isPlayer
         ? `onclick="window.placeShip(${r}, ${c})"`
