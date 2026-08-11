@@ -52,7 +52,7 @@ body {
 .game-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 
 /* ===== HEADER ===== */
-.game-header { text-align: center; margin-bottom: 24px; position: relative; }
+.game-header { text-align: center; margin-bottom: 20px; position: relative; }
 
 .settings-wrapper { position: absolute; top: 0; right: 0; z-index: 50; }
 
@@ -147,11 +147,61 @@ body {
 .subtitle { font-size: 1rem; font-weight: 400; letter-spacing: 4px; opacity: 0.7; }
 .tagline { color: var(--color-miss); font-size: 0.85rem; margin-top: 4px; }
 
+.header-links { margin-top: 10px; display: flex; gap: 12px; justify-content: center; }
+.header-link {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: rgba(52, 152, 219, 0.1);
+  border: 1px solid rgba(52, 152, 219, 0.3);
+  color: var(--color-accent);
+  text-decoration: none;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+.header-link:hover { background: rgba(52, 152, 219, 0.2); transform: translateY(-1px); }
+
+/* ===== HOW TO PLAY ===== */
+.how-to-play {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.htp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-panel);
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.htp-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.htp-text { font-size: 0.82rem; color: var(--color-text); }
+
 /* ===== MAIN LAYOUT ===== */
 .game-main { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 24px; }
 
 @media (max-width: 768px) {
   .game-main { grid-template-columns: 1fr; }
+  .how-to-play { flex-direction: column; }
 }
 
 /* ===== BOARD SECTION ===== */
@@ -271,7 +321,7 @@ body {
   margin-bottom: 16px;
 }
 
-.privacy-note h3 { font-size: 0.9rem; color: var(--color-aleo); margin-bottom: 4px; }
+.privacy-note h3 { font-size: 0.9rem; color: var(--color-aleo); margin-bottom: 6px; }
 .privacy-note p { font-size: 0.8rem; color: var(--color-miss); line-height: 1.5; }
 .privacy-note code { background: rgba(168, 85, 247, 0.1); padding: 1px 4px; border-radius: 3px; font-size: 0.75rem; color: var(--color-aleo); }
 

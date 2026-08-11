@@ -6,43 +6,44 @@ const I18N = {
   zh: {
     title: "隐海战舰",
     subtitle: "SHADOW FLEET",
-    tagline: "Aleo 零知识战舰 — 隐私海战",
+    tagline: "ZK Battleship on Aleo — 零知识证明海军战棋",
     yourFleet: "你的舰队",
     enemyWaters: "敌方海域",
     placeYourShips: "— 放置你的战舰",
     clickToFire: "— 点击开火",
-    placing: "正在放置: {name} ({size} 格) — 方向: {direction}",
-    shipsRemaining: "剩余战舰: {n}/{total}",
+    placing: "正在放置: <strong>{name}</strong> ({size} 格) | 方向: {direction}",
+    shipsRemaining: "剩余战舰: <strong>{n}</strong>/{total} 格",
+    enemyShipsRemaining: "敌方剩余战舰: <strong>{n}</strong>/{total} 格",
     gameOver: "游戏结束",
     waitingForBattle: "等待战斗开始...",
-    shipPlacement: "🚢 战舰放置 — 放置全部 {n} 艘战舰即可开始",
+    shipPlacement: "🚢 布舰阶段 — 放置全部 {n} 艘战舰后开始战斗",
     yourTurn: "🎯 你的回合 — 点击敌方海域开火",
-    opponentTurn: "⏳ 对手正在生成零知识证明...",
-    victory: "🏆 胜利！敌方舰队已歼灭！",
-    defeat: "💀 失败！你的舰队已被击沉。",
+    opponentTurn: "⏳ 对手正在生成 ZK 证明...",
+    victory: "🏆 胜利！敌方舰队已全部击沉！",
+    defeat: "💀 失败！你的舰队被击沉了。",
     zkActive: "⚡ Aleo ZK: 已激活",
     zkLoading: "⚠ Aleo ZK: 加载中...",
-    privacyTitle: "🔐 零知识隐私保障",
-    privacyDesc: "战舰位置是 Aleo ZK 程序的<strong>私有输入</strong>。<code>verify_hit</code> 函数证明命中/未命中结果正确，<strong>不泄露</strong>战舰位字符串。仅布尔结果公开。",
+    privacyTitle: "🔐 零知识隐私保证 — ZK Privacy Guarantee",
+    privacyDesc: "战舰位置是 Aleo ZK 程序的<strong>私有输入 (private input)</strong>。<code>verify_hit</code> 函数证明命中/未命中结果正确，<strong>但不暴露</strong>战舰位串。只有布尔结果公开。",
     noProofs: "尚未生成 ZK 证明。开始开火以生成零知识证明！",
-    shipsPrivate: "ships (私有):",
-    maskPublic: "mask (公开):",
+    shipsPrivate: "战舰位置 (私有):",
+    maskPublic: "射击掩码 (公开):",
     result: "结果:",
     proofHash: "证明哈希:",
     zkProofBadge: "✓ ZK 证明",
     fallbackBadge: "⚠ 回退模式",
     victoryTitle: "🏆 胜利",
     defeatTitle: "💀 失败",
-    victoryDesc: "你击沉了敌方舰队！",
-    defeatDesc: "你的舰队已被摧毁。",
+    victoryDesc: "你击沉了敌方全部舰队！",
+    defeatDesc: "你的舰队被击沉了。",
     proofSummary: "所有命中/未命中结果均通过 Aleo 零知识证明验证。",
-    playAgain: "再玩一局",
+    playAgain: "再来一局",
     initializing: "正在初始化 ZK 引擎...",
-    loadingDesc: "正在加载 Aleo WebAssembly 运行时以生成零知识证明",
+    loadingDesc: "加载 Aleo WebAssembly 运行时，用于浏览器内零知识证明生成",
     encrypted: "🔒 已加密",
-    rotate: "↻ 旋转",
-    horizontal: "水平",
-    vertical: "垂直",
+    rotate: "↻ 旋转方向",
+    horizontal: "➡️ 横向",
+    vertical: "⬇️ 纵向",
     destroyer: "驱逐舰",
     frigate: "护卫舰",
     submarine: "潜水艇",
@@ -52,6 +53,9 @@ const I18N = {
     chinese: "中文",
     english: "English",
     close: "关闭",
+    htp1: "在左侧网格点击放置 3 艘战舰",
+    htp2: "点击右侧敌方海域开火",
+    htp3: "每次开火生成 ZK 零知识证明，验证命中/未命中且不暴露战舰位置",
   },
   en: {
     title: "Shadow Fleet",
@@ -61,8 +65,9 @@ const I18N = {
     enemyWaters: "Enemy Waters",
     placeYourShips: "— Place Your Ships",
     clickToFire: "— Click to Fire",
-    placing: "Placing: {name} ({size} cells) — Direction: {direction}",
-    shipsRemaining: "Ships remaining: {n}/{total}",
+    placing: "Placing: <strong>{name}</strong> ({size} cells) | Direction: {direction}",
+    shipsRemaining: "Ships remaining: <strong>{n}</strong>/{total} cells",
+    enemyShipsRemaining: "Enemy ships remaining: <strong>{n}</strong>/{total} cells",
     gameOver: "Game Over",
     waitingForBattle: "Waiting for battle...",
     shipPlacement: "🚢 Ship Placement — Place all {n} ships to begin",
@@ -102,6 +107,9 @@ const I18N = {
     chinese: "中文",
     english: "English",
     close: "Close",
+    htp1: "Place 3 ships on the left grid",
+    htp2: "Click enemy waters on the right to fire",
+    htp3: "Each shot generates a ZK proof verifying hit/miss without revealing ship positions",
   },
 };
 
@@ -176,7 +184,6 @@ async function zkVerifyHit(shipsBitstring, mask) {
   if (state.zkEnabled && window.__zkExecute) {
     try {
       const result = await window.__zkExecute("verify_hit", [`${shipsBitstring}u32`, `${mask}u32`]);
-      // verify_hit returns (ships & mask) as u32 → non-zero means HIT
       const val = parseInt(result[0]);
       const isHit = val !== 0;
       addProofLog("verify_hit", shipsBitstring, mask, isHit ? "true" : "false", true);
@@ -195,7 +202,6 @@ async function zkVerifyVictory(shipsBitstring, hitsBitstring) {
   if (state.zkEnabled && window.__zkExecute) {
     try {
       const result = await window.__zkExecute("verify_victory", [`${shipsBitstring}u32`, `${hitsBitstring}u32`]);
-      // verify_victory returns (ships & hits) as u32 → equals ships means all sunk
       const shipsHit = parseInt(result[0]);
       const won = shipsHit === shipsBitstring;
       addProofLog("verify_victory", shipsBitstring, hitsBitstring, won ? "true" : "false", true);
@@ -375,7 +381,12 @@ function render() {
         </div>
         <h1>${t("title")} <span class="subtitle">${t("subtitle")}</span></h1>
         <p class="tagline">${t("tagline")}</p>
+        <div class="header-links">
+          <a href="https://github.com/cpufreestyle/zk-battleship-aleo" target="_blank" class="header-link">📖 GitHub</a>
+          <a href="https://shadowfleet.vercel.app" target="_blank" class="header-link">🚀 Live Demo</a>
+        </div>
       </header>
+      ${state.phase === "placement" ? renderHowToPlay() : ""}
       <div class="game-main">
         <div class="board-section">
           <h2>${t("yourFleet")} ${state.phase === "placement" ? t("placeYourShips") : ""}</h2>
@@ -396,7 +407,7 @@ function render() {
           <h2>${t("enemyWaters")} ${state.phase === "battle" ? t("clickToFire") : ""}</h2>
           <p class="board-info">
             ${state.phase === "battle"
-              ? t("shipsRemaining", { n: state.opponentShipsRemaining, total: TOTAL_SHIP_CELLS })
+              ? t("enemyShipsRemaining", { n: state.opponentShipsRemaining, total: TOTAL_SHIP_CELLS })
               : state.phase === "gameover" ? t("gameOver") : t("waitingForBattle")
             }
           </p>
@@ -410,12 +421,21 @@ function render() {
   `;
 }
 
-function renderLoading() {
+function renderHowToPlay() {
   return `
-    <div class="loading-screen">
-      <div class="loading-spinner"></div>
-      <h2>${t("initializing")}</h2>
-      <p>${t("loadingDesc")}</p>
+    <div class="how-to-play">
+      <div class="htp-item">
+        <span class="htp-num">1</span>
+        <span class="htp-text">${t("htp1")}</span>
+      </div>
+      <div class="htp-item">
+        <span class="htp-num">2</span>
+        <span class="htp-text">${t("htp2")}</span>
+      </div>
+      <div class="htp-item">
+        <span class="htp-num">3</span>
+        <span class="htp-text">${t("htp3")}</span>
+      </div>
     </div>
   `;
 }
@@ -434,6 +454,16 @@ function renderSettingsPanel() {
           <button class="lang-option ${currentLang === "en" ? "active" : ""}" onclick="window.setLang('en')">${t("english")}</button>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function renderLoading() {
+  return `
+    <div class="loading-screen">
+      <div class="loading-spinner"></div>
+      <h2>${t("initializing")}</h2>
+      <p>${t("loadingDesc")}</p>
     </div>
   `;
 }
