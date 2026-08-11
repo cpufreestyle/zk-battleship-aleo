@@ -54,10 +54,9 @@ body {
 /* ===== HEADER ===== */
 .game-header { text-align: center; margin-bottom: 24px; position: relative; }
 
-.lang-toggle {
-  position: absolute;
-  top: 0;
-  right: 0;
+.settings-wrapper { position: absolute; top: 0; right: 0; z-index: 50; }
+
+.settings-btn {
   padding: 6px 16px;
   background: var(--bg-cell);
   color: var(--color-text);
@@ -69,7 +68,71 @@ body {
   transition: all 0.2s;
 }
 
-.lang-toggle:hover { background: var(--color-accent); }
+.settings-btn:hover { background: var(--color-accent); }
+
+.settings-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 220px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.15s ease;
+}
+
+.settings-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--color-miss);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.settings-close:hover { color: var(--color-text); background: var(--bg-cell); }
+
+.settings-section { display: flex; flex-direction: column; gap: 8px; }
+
+.settings-label { font-size: 0.8rem; color: var(--color-miss); font-weight: 600; }
+
+.lang-options { display: flex; gap: 8px; }
+
+.lang-option {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-cell);
+  color: var(--color-text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.lang-option:hover { border-color: var(--color-accent); }
+
+.lang-option.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  font-weight: 700;
+}
 
 .game-header h1 {
   font-size: 2.5rem;

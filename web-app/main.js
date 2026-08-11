@@ -47,6 +47,11 @@ const I18N = {
     frigate: "护卫舰",
     submarine: "潜水艇",
     langLabel: "EN",
+    settings: "⚙ 设置",
+    language: "语言",
+    chinese: "中文",
+    english: "English",
+    close: "关闭",
   },
   en: {
     title: "Shadow Fleet",
@@ -92,6 +97,11 @@ const I18N = {
     frigate: "Frigate",
     submarine: "Submarine",
     langLabel: "中",
+    settings: "⚙ Settings",
+    language: "Language",
+    chinese: "中文",
+    english: "English",
+    close: "Close",
   },
 };
 
@@ -114,6 +124,19 @@ function toggleLang() {
   currentLang = currentLang === "zh" ? "en" : "zh";
   localStorage.setItem("lang", currentLang);
   document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
+  render();
+}
+
+function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem("lang", lang);
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  state.settingsOpen = false;
+  render();
+}
+
+function toggleSettings() {
+  state.settingsOpen = !state.settingsOpen;
   render();
 }
 
@@ -145,6 +168,7 @@ const state = {
   aleoAddress: null,
   proofLog: [],
   zkEnabled: false,
+  settingsOpen: false,
 };
 
 // ===== ZK VERIFICATION =====
@@ -345,7 +369,10 @@ function render() {
   app.innerHTML = `
     <div class="game-container">
       <header class="game-header">
-        <button class="lang-toggle" onclick="window.toggleLang()">${t("langLabel")}</button>
+        <div class="settings-wrapper">
+          <button class="settings-btn" onclick="window.toggleSettings()">${t("settings")}</button>
+          ${state.settingsOpen ? renderSettingsPanel() : ""}
+        </div>
         <h1>${t("title")} <span class="subtitle">${t("subtitle")}</span></h1>
         <p class="tagline">${t("tagline")}</p>
       </header>
@@ -389,6 +416,24 @@ function renderLoading() {
       <div class="loading-spinner"></div>
       <h2>${t("initializing")}</h2>
       <p>${t("loadingDesc")}</p>
+    </div>
+  `;
+}
+
+function renderSettingsPanel() {
+  return `
+    <div class="settings-dropdown">
+      <div class="settings-dropdown-header">
+        <span>${t("settings")}</span>
+        <button class="settings-close" onclick="window.toggleSettings()">✕</button>
+      </div>
+      <div class="settings-section">
+        <label class="settings-label">${t("language")}</label>
+        <div class="lang-options">
+          <button class="lang-option ${currentLang === "zh" ? "active" : ""}" onclick="window.setLang('zh')">${t("chinese")}</button>
+          <button class="lang-option ${currentLang === "en" ? "active" : ""}" onclick="window.setLang('en')">${t("english")}</button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -520,6 +565,8 @@ window.placeShip = handlePlacementClick;
 window.fireAt = playerFire;
 window.toggleDir = togglePlacementDirection;
 window.toggleLang = toggleLang;
+window.setLang = setLang;
+window.toggleSettings = toggleSettings;
 window.restart = () => {
   state.phase = "placement";
   state.playerShips = 0;
