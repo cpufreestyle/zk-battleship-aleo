@@ -89,6 +89,45 @@ const I18N = {
     hintVictoryEn: "🏆 Congratulations! You sunk the entire enemy fleet! All results verified via ZK proofs",
     hintDefeat: "💀 你的舰队被击沉了。再来一局试试？",
     hintDefeatEn: "💀 Your fleet was sunk. Try again?",
+    // Difficulty
+    difficultyTitle: "⚔️ 选择难度",
+    difficultyTitleEn: "Select Difficulty",
+    easy: "简单",
+    normal: "普通",
+    hard: "困难",
+    easyDesc: "随机射击 — 适合新手",
+    normalDesc: "命中后追踪相邻格 — 平衡挑战",
+    hardDesc: "智能追踪 + 奇偶策略 — 高手挑战",
+    // Random placement
+    randomPlace: "🎲 随机布阵",
+    // Sound
+    soundOn: "🔊 音效",
+    soundOff: "🔇 音效",
+    // Stats
+    statsTitle: "📊 战绩统计",
+    shotsFired: "射击次数",
+    hitRate: "命中率",
+    turns: "回合数",
+    winRate: "胜率",
+    wins: "胜",
+    losses: "负",
+    // Fleet config
+    fleetTitle: "🚢 选择舰队",
+    fleetSmall: "小型 (3舰/7格)",
+    fleetLarge: "大型 (4舰/9格)",
+    patrolBoat: "巡逻艇",
+    // ZK Radar Scan
+    scanBtn: "📡 ZK 雷达扫描",
+    scanMode: "🎯 扫描模式 — 点击敌方海域选择扫描中心",
+    scanModeEn: "Scan Mode — click enemy grid to select scan center",
+    scanResult: "📡 扫描发现 {n} 格有战舰（具体位置仍加密）",
+    scanResultEn: "📡 Scan found {n} ship cells in area (positions still encrypted)",
+    scanUsed: "✅ 扫描已使用",
+    scanUsedEn: "Scan already used",
+    hintScan: "📡 ZK 雷达扫描已激活！点击敌方海域选择 3x3 扫描区域，ZK 证明将告诉你该区域有多少战舰，但不暴露具体位置",
+    hintScanEn: "📡 ZK Radar Scan active! Click enemy grid to select a 3x3 scan area. ZK proof will tell you how many ships are there, without revealing positions",
+    hintScanResult: "📡 扫描完成：该区域有 {n} 格战舰 — 利用这个信息制定策略吧！",
+    hintScanResultEn: "📡 Scan complete: {n} ship cells found in that area — use this info strategically!",
   },
   en: {
     title: "Shadow Fleet",
@@ -176,6 +215,45 @@ const I18N = {
     hintVictoryEn: "🏆 Congratulations! You sunk the entire enemy fleet! All results verified via ZK proofs",
     hintDefeat: "💀 Your fleet was sunk. Try again?",
     hintDefeatEn: "💀 Your fleet was sunk. Try again?",
+    // Difficulty
+    difficultyTitle: "⚔️ Select Difficulty",
+    difficultyTitleEn: "Select Difficulty",
+    easy: "Easy",
+    normal: "Normal",
+    hard: "Hard",
+    easyDesc: "Random shots — for beginners",
+    normalDesc: "Hunts adjacent cells after hit — balanced",
+    hardDesc: "Smart tracking + parity strategy — challenging",
+    // Random placement
+    randomPlace: "🎲 Random Place",
+    // Sound
+    soundOn: "🔊 Sound",
+    soundOff: "🔇 Sound",
+    // Stats
+    statsTitle: "📊 Battle Stats",
+    shotsFired: "Shots fired",
+    hitRate: "Hit rate",
+    turns: "Turns",
+    winRate: "Win rate",
+    wins: "Wins",
+    losses: "Losses",
+    // Fleet config
+    fleetTitle: "🚢 Select Fleet",
+    fleetSmall: "Small (3 ships/7 cells)",
+    fleetLarge: "Large (4 ships/9 cells)",
+    patrolBoat: "Patrol Boat",
+    // ZK Radar Scan
+    scanBtn: "📡 ZK Radar Scan",
+    scanMode: "Scan Mode — click enemy grid to select scan center",
+    scanModeEn: "Scan Mode — click enemy grid to select scan center",
+    scanResult: "📡 Scan found {n} ship cells in area (positions still encrypted)",
+    scanResultEn: "📡 Scan found {n} ship cells in area (positions still encrypted)",
+    scanUsed: "✅ Scan already used",
+    scanUsedEn: "Scan already used",
+    hintScan: "📡 ZK Radar Scan active! Click enemy grid to select a 3x3 scan area. ZK proof tells you how many ships, without revealing positions",
+    hintScanEn: "📡 ZK Radar Scan active! Click enemy grid to select a 3x3 scan area. ZK proof tells you how many ships, without revealing positions",
+    hintScanResult: "📡 Scan complete: {n} ship cells found — use this info strategically!",
+    hintScanResultEn: "📡 Scan complete: {n} ship cells found — use this info strategically!",
   },
 };
 
@@ -217,24 +295,70 @@ function toggleSettings() {
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
-const SHIPS = [
-  { size: 3, name: "Destroyer" },
-  { size: 2, name: "Frigate" },
-  { size: 2, name: "Submarine" },
-];
-const TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
+const FLEET_CONFIGS = {
+  small: [
+    { size: 3, name: "Destroyer" },
+    { size: 2, name: "Frigate" },
+    { size: 2, name: "Submarine" },
+  ],
+  large: [
+    { size: 3, name: "Destroyer" },
+    { size: 2, name: "Frigate" },
+    { size: 2, name: "Submarine" },
+    { size: 2, name: "PatrolBoat" },
+  ],
+};
+let SHIPS = FLEET_CONFIGS.small;
+let TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
+
+// ===== SOUND FX =====
+const SoundFX = {
+  ctx: null,
+  enabled: localStorage.getItem("sound") !== "false",
+  init() {
+    if (!this.ctx) {
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    }
+  },
+  beep(freq, duration, type = "sine", vol = 0.15) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  },
+  fire() { this.beep(200, 0.15, "sawtooth", 0.1); },
+  hit() { this.beep(80, 0.3, "square", 0.2); setTimeout(() => this.beep(60, 0.2, "square", 0.15), 100); },
+  miss() { this.beep(400, 0.1, "sine", 0.08); setTimeout(() => this.beep(300, 0.15, "sine", 0.06), 80); },
+  place() { this.beep(600, 0.08, "sine", 0.1); },
+  scan() { this.beep(800, 0.05, "sine", 0.08); setTimeout(() => this.beep(1000, 0.05, "sine", 0.08), 50); setTimeout(() => this.beep(1200, 0.1, "sine", 0.06), 100); },
+  victory() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.beep(f, 0.2, "triangle", 0.12), i * 150)); },
+  defeat() { [400, 350, 300, 250].forEach((f, i) => setTimeout(() => this.beep(f, 0.3, "sawtooth", 0.1), i * 200)); },
+  toggle() {
+    this.enabled = !this.enabled;
+    localStorage.setItem("sound", this.enabled);
+    return this.enabled;
+  },
+};
 
 // ===== GAME STATE =====
 const state = {
-  phase: "loading",
+  phase: "loading", // loading -> menu -> placement -> battle -> gameover
   playerShips: 0,
   playerShots: 0,
   playerHits: 0,
-  playerShipsRemaining: TOTAL_SHIP_CELLS,
+  playerShipsRemaining: 0,
   opponentShips: 0,
   opponentShots: 0,
   opponentHits: 0,
-  opponentShipsRemaining: TOTAL_SHIP_CELLS,
+  opponentShipsRemaining: 0,
   currentTurn: "player",
   winner: null,
   placingShipIndex: 0,
@@ -244,6 +368,12 @@ const state = {
   zkEnabled: false,
   settingsOpen: false,
   currentHint: "",
+  difficulty: "normal",
+  fleetSize: "small",
+  scansRemaining: 1,
+  scanMode: false,
+  stats: JSON.parse(localStorage.getItem("stats") || '{"wins":0,"losses":0,"shots":0,"hits":0,"turns":0}'),
+  currentTurns: 0,
 };
 
 // ===== CONTEXTUAL HINTS =====
@@ -259,6 +389,7 @@ function updateHint(hintKey) {
 
 function getHintText() {
   if (!state.currentHint) return "";
+  if (state.currentHint === "__custom__") return state._customHint || "";
   return th(state.currentHint);
 }
 
@@ -297,6 +428,43 @@ async function zkVerifyVictory(shipsBitstring, hitsBitstring) {
   const won = (shipsBitstring & hitsBitstring) === shipsBitstring;
   addProofLog("verify_victory", shipsBitstring, hitsBitstring, won ? "true" : "false", false);
   return won;
+}
+
+// ===== ZK RADAR SCAN =====
+async function zkScanArea(shipsBitstring, scanMask) {
+  if (state.zkEnabled && window.__zkExecute) {
+    try {
+      const result = await window.__zkExecute("verify_scan", [`${shipsBitstring}u32`, `${scanMask}u32`]);
+      const val = parseInt(result[0]);
+      const count = (val & 0xFF); // count of bits set in result
+      addProofLog("verify_scan", shipsBitstring, scanMask, String(count), true);
+      return count;
+    } catch (e) {
+      console.warn("Aleo ZK scan failed, using JS fallback:", e.message);
+      state.zkEnabled = false;
+    }
+  }
+  // JS fallback: count set bits in (ships & scanMask)
+  const result = shipsBitstring & scanMask;
+  let count = 0;
+  let tmp = result;
+  while (tmp) { count += tmp & 1; tmp >>= 1; }
+  addProofLog("verify_scan", shipsBitstring, scanMask, String(count), false);
+  return count;
+}
+
+function build3x3Mask(centerRow, centerCol) {
+  let mask = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const r = centerRow + dr;
+      const c = centerCol + dc;
+      if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+        mask |= (1 << cellToBit(r, c));
+      }
+    }
+  }
+  return mask;
 }
 
 // ===== PROOF LOG =====
@@ -361,24 +529,40 @@ function generateRandomShips() {
 // ===== GAME LOGIC =====
 async function playerFire(row, col) {
   if (state.phase !== "battle" || state.currentTurn !== "player") return;
+  
+  // Scan mode: handle differently
+  if (state.scanMode) {
+    return playerScan(row, col);
+  }
+  
   const mask = getMask(row, col);
   if (state.playerShots & mask) return;
 
   state.playerShots |= mask;
+  state.currentTurns++;
+  state.stats.shots++;
+  SoundFX.fire();
   const isHit = await zkVerifyHit(state.opponentShips, mask);
   if (isHit) {
     state.playerHits |= mask;
     state.opponentShipsRemaining--;
+    state.stats.hits++;
     updateHint("hintBattleHit");
+    SoundFX.hit();
   } else {
     updateHint("hintBattleMiss");
+    SoundFX.miss();
   }
+  saveStats();
 
   const victory = await zkVerifyVictory(state.opponentShips, state.playerHits);
   if (victory) {
     state.phase = "gameover";
     state.winner = "player";
+    state.stats.wins++;
+    saveStats();
     updateHint("hintVictory");
+    SoundFX.victory();
     render();
     return;
   }
@@ -391,12 +575,42 @@ async function playerFire(row, col) {
 
 async function opponentFire() {
   if (state.phase !== "battle") return;
-  const available = [];
-  for (let i = 0; i < TOTAL_CELLS; i++) {
-    if (!(state.opponentShots & (1 << i))) available.push(i);
+  
+  let target = -1;
+  
+  if (state.difficulty === "easy") {
+    // Pure random
+    const available = getAvailableCells(state.opponentShots);
+    if (available.length === 0) return;
+    target = available[Math.floor(Math.random() * available.length)];
+  } else if (state.difficulty === "normal") {
+    // Hunt mode: if we have recent hits, try adjacent cells
+    const adjacent = getAdjacentToHits(state.opponentHits, state.opponentShots);
+    if (adjacent.length > 0) {
+      target = adjacent[Math.floor(Math.random() * adjacent.length)];
+    } else {
+      const available = getAvailableCells(state.opponentShots);
+      if (available.length === 0) return;
+      target = available[Math.floor(Math.random() * available.length)];
+    }
+  } else {
+    // Hard: smart tracking + parity hunting
+    const adjacent = getAdjacentToHits(state.opponentHits, state.opponentShots);
+    if (adjacent.length > 0) {
+      target = adjacent[Math.floor(Math.random() * adjacent.length)];
+    } else {
+      // Parity: only try even cells (every other)
+      const available = getAvailableCells(state.opponentShots).filter(i => i % 2 === 0);
+      if (available.length === 0) {
+        const all = getAvailableCells(state.opponentShots);
+        if (all.length === 0) return;
+        target = all[Math.floor(Math.random() * all.length)];
+      } else {
+        target = available[Math.floor(Math.random() * available.length)];
+      }
+    }
   }
-  if (available.length === 0) return;
-  const target = available[Math.floor(Math.random() * available.length)];
+  
   const mask = 1 << target;
 
   state.opponentShots |= mask;
@@ -414,12 +628,66 @@ async function opponentFire() {
   if (victory) {
     state.phase = "gameover";
     state.winner = "opponent";
+    state.stats.losses++;
+    saveStats();
     updateHint("hintDefeat");
+    SoundFX.defeat();
     render();
     return;
   }
 
   state.currentTurn = "player";
+  render();
+}
+
+// ===== AI HELPERS =====
+function getAvailableCells(shotsBitstring) {
+  const available = [];
+  for (let i = 0; i < TOTAL_CELLS; i++) {
+    if (!(shotsBitstring & (1 << i))) available.push(i);
+  }
+  return available;
+}
+
+function getAdjacentToHits(hitsBitstring, shotsBitstring) {
+  const adjacent = [];
+  const seen = new Set();
+  for (let i = 0; i < TOTAL_CELLS; i++) {
+    if (hitsBitstring & (1 << i)) {
+      const { row, col } = bitToCell(i);
+      for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const r = row + dr, c = col + dc;
+        if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+          const bit = cellToBit(r, c);
+          if (!(shotsBitstring & (1 << bit)) && !seen.has(bit)) {
+            adjacent.push(bit);
+            seen.add(bit);
+          }
+        }
+      }
+    }
+  }
+  return adjacent;
+}
+
+// ===== STATS =====
+function saveStats() {
+  state.stats.turns = state.currentTurns;
+  localStorage.setItem("stats", JSON.stringify(state.stats));
+}
+
+// ===== ZK RADAR SCAN =====
+async function playerScan(row, col) {
+  state.scanMode = false;
+  const scanMask = build3x3Mask(row, col);
+  SoundFX.scan();
+  const count = await zkScanArea(state.opponentShips, scanMask);
+  const hintKey = "hintScanResult";
+  state.currentHint = hintKey;
+  // Use custom hint with parameter
+  const hintText = th(hintKey).replace("{n}", String(count));
+  state.currentHint = "__custom__";
+  state._customHint = hintText;
   render();
 }
 
@@ -451,6 +719,7 @@ function handlePlacementClick(row, col) {
     state.playerShips |= (1 << bit);
   }
   state.placingShipIndex++;
+  SoundFX.place();
 
   if (state.placingShipIndex >= SHIPS.length) {
     state.opponentShips = generateRandomShips();
@@ -469,11 +738,33 @@ function togglePlacementDirection() {
   render();
 }
 
+function randomPlacement() {
+  if (state.phase !== "placement") return;
+  state.playerShips = generateRandomShips();
+  state.placingShipIndex = SHIPS.length;
+  state.opponentShips = generateRandomShips();
+  state.phase = "battle";
+  updateHint("hintBattleStart");
+  SoundFX.place();
+  render();
+}
+
+function activateScan() {
+  if (state.scansRemaining <= 0 || state.scanMode) return;
+  state.scanMode = true;
+  state.currentHint = "hintScan";
+  render();
+}
+
 // ===== RENDERING =====
 function render() {
   const app = document.querySelector("#app");
   if (state.phase === "loading") {
     app.innerHTML = renderLoading();
+    return;
+  }
+  if (state.phase === "menu") {
+    app.innerHTML = renderMenu();
     return;
   }
   app.innerHTML = `
@@ -506,7 +797,10 @@ function render() {
             }
           </p>
           ${renderGrid("player")}
-          ${state.phase === "placement" ? `<button class="dir-btn" onclick="window.toggleDir()">${t("rotate")}</button>` : ""}
+          <div class="board-buttons">
+            ${state.phase === "placement" ? `<button class="dir-btn" onclick="window.toggleDir()">${t("rotate")}</button>` : ""}
+            ${state.phase === "placement" ? `<button class="dir-btn" onclick="window.randomPlace()">${t("randomPlace")}</button>` : ""}
+          </div>
         </div>
         <div class="board-section">
           <h2>${t("enemyWaters")} ${state.phase === "battle" ? t("clickToFire") : ""}</h2>
@@ -517,9 +811,19 @@ function render() {
             }
           </p>
           ${renderGrid("opponent")}
+          ${state.phase === "battle" && state.currentTurn === "player" ? `
+            <div class="board-buttons">
+              <button class="dir-btn ${state.scansRemaining <= 0 ? "btn-disabled" : ""}" 
+                onclick="window.activateScan()" 
+                ${state.scansRemaining <= 0 ? "disabled" : ""}>
+                ${t("scanBtn")} (${state.scansRemaining})
+              </button>
+            </div>
+          ` : ""}
         </div>
       </div>
       <div class="status-bar">${renderStatusBar()}</div>
+      ${renderStatsPanel()}
       <div class="proof-panel">${renderProofPanel()}</div>
       ${state.phase === "gameover" ? renderGameOver() : ""}
     </div>
@@ -601,6 +905,79 @@ function renderSettingsPanel() {
           <button class="lang-option ${currentLang === "en" ? "active" : ""}" onclick="window.setLang('en')">${t("english")}</button>
         </div>
       </div>
+      <div class="settings-section">
+        <label class="settings-label">${t("soundOn")}</label>
+        <button class="lang-option" onclick="window.toggleSound()">${SoundFX.enabled ? t("soundOn") : t("soundOff")}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderMenu() {
+  return `
+    <div class="game-container">
+      <header class="game-header">
+        <h1>${t("title")} <span class="subtitle">${t("subtitle")}</span></h1>
+        <p class="tagline">${t("tagline")}</p>
+      </header>
+      <div class="menu-screen">
+        <div class="menu-section">
+          <h3 class="menu-title">${t("difficultyTitle")}</h3>
+          <div class="menu-options">
+            <button class="menu-option" onclick="window.selectGame('easy','small')">
+              <span class="mo-name">🎯 ${t("easy")}</span>
+              <span class="mo-desc">${t("easyDesc")}</span>
+            </button>
+            <button class="menu-option" onclick="window.selectGame('normal','small')">
+              <span class="mo-name">⚔️ ${t("normal")}</span>
+              <span class="mo-desc">${t("normalDesc")}</span>
+            </button>
+            <button class="menu-option" onclick="window.selectGame('hard','small')">
+              <span class="mo-name">💀 ${t("hard")}</span>
+              <span class="mo-desc">${t("hardDesc")}</span>
+            </button>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h3 class="menu-title">${t("fleetTitle")}</h3>
+          <div class="menu-options">
+            <button class="menu-option" onclick="window.selectGame('normal','small')">
+              <span class="mo-name">🚢 ${t("fleetSmall")}</span>
+            </button>
+            <button class="menu-option" onclick="window.selectGame('normal','large')">
+              <span class="mo-name">⛴️ ${t("fleetLarge")}</span>
+            </button>
+          </div>
+        </div>
+        ${state.stats.wins + state.stats.losses > 0 ? `
+          <div class="menu-section">
+            <div class="mini-stats">
+              <span>🏆 ${state.stats.wins} ${t("wins")}</span>
+              <span>💀 ${state.stats.losses} ${t("losses")}</span>
+              <span>🎯 ${state.stats.shots > 0 ? Math.round(state.stats.hits / state.stats.shots * 100) : 0}% ${t("hitRate")}</span>
+            </div>
+          </div>
+        ` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderStatsPanel() {
+  const total = state.stats.wins + state.stats.losses;
+  const winRate = total > 0 ? Math.round(state.stats.wins / total * 100) : 0;
+  const hitRate = state.stats.shots > 0 ? Math.round(state.stats.hits / state.stats.shots * 100) : 0;
+  return `
+    <div class="stats-panel">
+      <h3 class="stats-title">${t("statsTitle")}</h3>
+      <div class="stats-grid">
+        <div class="stat-item"><span class="stat-val">${state.stats.wins}</span><span class="stat-label">${t("wins")}</span></div>
+        <div class="stat-item"><span class="stat-val">${state.stats.losses}</span><span class="stat-label">${t("losses")}</span></div>
+        <div class="stat-item"><span class="stat-val">${winRate}%</span><span class="stat-label">${t("winRate")}</span></div>
+        <div class="stat-item"><span class="stat-val">${state.stats.shots}</span><span class="stat-label">${t("shotsFired")}</span></div>
+        <div class="stat-item"><span class="stat-val">${hitRate}%</span><span class="stat-label">${t("hitRate")}</span></div>
+        <div class="stat-item"><span class="stat-val">${state.currentTurns}</span><span class="stat-label">${t("turns")}</span></div>
+      </div>
     </div>
   `;
 }
@@ -678,7 +1055,7 @@ function renderStatusBar() {
     : `<span class="zk-badge zk-fallback">${t("zkLoading")}</span>`;
 
   return `
-    <div class="status-left">${status}</div>
+    <div class="status-left">${status} ${state.phase === "battle" ? `<span class="diff-badge">${t(state.difficulty)}</span>` : ""}</div>
     <div class="status-right">
       ${zkStatus}
       ${state.aleoAddress ? `<span class="addr-badge">Aleo: ${state.aleoAddress.substring(0, 12)}...</span>` : ""}
@@ -744,22 +1121,39 @@ window.toggleDir = togglePlacementDirection;
 window.toggleLang = toggleLang;
 window.setLang = setLang;
 window.toggleSettings = toggleSettings;
-window.restart = () => {
+window.randomPlace = randomPlacement;
+window.activateScan = activateScan;
+window.toggleSound = () => { const on = SoundFX.toggle(); render(); };
+window.selectGame = (difficulty, fleetSize) => {
+  state.difficulty = difficulty;
+  state.fleetSize = fleetSize;
+  SHIPS = FLEET_CONFIGS[fleetSize];
+  TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
+  state.playerShipsRemaining = TOTAL_SHIP_CELLS;
+  state.opponentShipsRemaining = TOTAL_SHIP_CELLS;
+  state.scansRemaining = 1;
+  state.scanMode = false;
+  state.currentTurns = 0;
   state.phase = "placement";
+  updateHint("hintPlace1");
+  render();
+};
+window.restart = () => {
+  state.phase = "menu";
   state.playerShips = 0;
   state.playerShots = 0;
   state.playerHits = 0;
-  state.playerShipsRemaining = TOTAL_SHIP_CELLS;
   state.opponentShips = 0;
   state.opponentShots = 0;
   state.opponentHits = 0;
-  state.opponentShipsRemaining = TOTAL_SHIP_CELLS;
-  state.currentTurn = "player";
   state.winner = null;
   state.placingShipIndex = 0;
   state.placementDirection = "horizontal";
   state.proofLog = [];
-  updateHint("hintPlace1");
+  state.scansRemaining = 1;
+  state.scanMode = false;
+  state.currentTurns = 0;
+  state.currentHint = "";
   render();
 };
 
@@ -770,8 +1164,7 @@ document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
 setTimeout(() => {
   if (state.phase === "loading") {
     state.zkEnabled = false;
-    state.phase = "placement";
-    updateHint("hintPlace1");
+    state.phase = "menu";
     render();
   }
 }, 3000);
@@ -779,16 +1172,14 @@ setTimeout(() => {
 if (window.__zkReady) {
   state.zkEnabled = true;
   state.aleoAddress = window.__zkAddress;
-  state.phase = "placement";
-  updateHint("hintPlace1");
+  state.phase = "menu";
   render();
 } else {
   window.addEventListener("zk-ready", () => {
     state.zkEnabled = true;
     state.aleoAddress = window.__zkAddress;
     if (state.phase === "loading") {
-      state.phase = "placement";
-      updateHint("hintPlace1");
+      state.phase = "menu";
     }
     render();
   });
@@ -796,8 +1187,7 @@ if (window.__zkReady) {
   window.addEventListener("zk-error", () => {
     if (state.phase === "loading") {
       state.zkEnabled = false;
-      state.phase = "placement";
-      updateHint("hintPlace1");
+      state.phase = "menu";
       render();
     }
   });

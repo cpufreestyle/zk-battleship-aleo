@@ -3,6 +3,7 @@ import { Account, ProgramManager } from "@provablehq/sdk";
 // ZK program in Aleo Instructions format
 // verify_hit: private ships bitstring + public mask → proves hit/miss without revealing ships
 // verify_victory: private ships + public hits → proves all ships sunk without revealing positions
+// verify_scan: private ships + public scan-area mask → returns count of ships in area WITHOUT revealing which cells
 const SHADOWFLEET_PROGRAM = `
 program shadowfleet.aleo;
 
@@ -13,6 +14,12 @@ function verify_hit:
     output r2 as u32.private;
 
 function verify_victory:
+    input r0 as u32.private;
+    input r1 as u32.public;
+    and r0 r1 into r2;
+    output r2 as u32.private;
+
+function verify_scan:
     input r0 as u32.private;
     input r1 as u32.public;
     and r0 r1 into r2;

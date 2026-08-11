@@ -161,6 +161,115 @@ body {
 }
 .header-link:hover { background: rgba(52, 152, 219, 0.2); transform: translateY(-1px); }
 
+/* ===== MENU SCREEN ===== */
+.menu-screen {
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.menu-section { text-align: center; }
+
+.menu-title {
+  font-size: 1rem;
+  color: var(--color-accent);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.menu-options {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.menu-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 140px;
+}
+
+.menu-option:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
+}
+
+.mo-name { font-size: 0.95rem; font-weight: 700; color: var(--color-text); }
+.mo-desc { font-size: 0.72rem; color: var(--color-miss); }
+
+.mini-stats {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  font-size: 0.82rem;
+  color: var(--color-miss);
+}
+
+/* ===== BOARD BUTTONS ===== */
+.board-buttons { margin-top: 12px; display: flex; gap: 8px; }
+.board-buttons .dir-btn { flex: 1; }
+.btn-disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== DIFFICULTY BADGE ===== */
+.diff-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(168, 85, 247, 0.1);
+  color: var(--color-aleo);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+/* ===== STATS PANEL ===== */
+.stats-panel {
+  background: var(--bg-panel);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+
+.stats-title {
+  font-size: 0.85rem;
+  color: var(--color-accent);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  text-align: center;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-val { font-size: 1.1rem; font-weight: 800; color: var(--color-text); }
+.stat-label { font-size: 0.65rem; color: var(--color-miss); }
+
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+}
+
 /* ===== HINT BAR ===== */
 .hint-bar {
   background: linear-gradient(135deg, rgba(52, 152, 219, 0.15), rgba(168, 85, 247, 0.1));
