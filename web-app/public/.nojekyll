@@ -1,2 +1,0 @@
-GitHub Pages 默认用 Jekyll 处理站点，会忽略下划线开头的文件/目录（例如 _headers）。
-这个文件的存在会关闭 Jekyll，让 dist 产物被原样发布。内容本身不会被读取。
