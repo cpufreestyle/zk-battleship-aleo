@@ -325,7 +325,8 @@ body {
 .privacy-note p { font-size: 0.8rem; color: var(--color-miss); line-height: 1.5; }
 .privacy-note code { background: rgba(168, 85, 247, 0.1); padding: 1px 4px; border-radius: 3px; font-size: 0.75rem; color: var(--color-aleo); }
 
-.proof-empty { text-align: center; color: var(--color-miss); font-size: 0.85rem; padding: 20px; }
+.proof-empty { text-align: center; color: var(--color-miss); font-size: 0.85rem; padding: 20px; line-height: 1.6; }
+.proof-empty .privacy-en { font-size: 0.72rem; opacity: 0.7; font-style: italic; }
 
 .proof-log { display: flex; flex-direction: column; gap: 8px; }
 
@@ -372,7 +373,8 @@ body {
 
 .game-over-modal h2 { font-size: 2rem; margin-bottom: 12px; }
 .game-over-modal p { color: var(--color-miss); margin-bottom: 8px; }
-.proof-summary { font-size: 0.8rem; color: var(--color-aleo); margin: 16px 0; }
+.proof-summary { font-size: 0.8rem; color: var(--color-aleo); margin: 16px 0; line-height: 1.5; }
+.proof-summary .privacy-en { font-size: 0.72rem; opacity: 0.7; font-style: italic; }
 
 .restart-btn {
   padding: 12px 32px;

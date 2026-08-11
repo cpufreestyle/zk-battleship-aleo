@@ -627,7 +627,6 @@ setTimeout(() => {
   }
 }, 3000);
 
-// Listen for ZK engine ready event (or check if already ready)
 if (window.__zkReady) {
   state.zkEnabled = true;
   state.aleoAddress = window.__zkAddress;
