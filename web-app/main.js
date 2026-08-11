@@ -1,6 +1,122 @@
 import "./style.css";
 import "./zk.js";
 
+// ===== I18N =====
+const I18N = {
+  zh: {
+    title: "隐海战舰",
+    subtitle: "SHADOW FLEET",
+    tagline: "Aleo 零知识战舰 — 隐私海战",
+    yourFleet: "你的舰队",
+    enemyWaters: "敌方海域",
+    placeYourShips: "— 放置你的战舰",
+    clickToFire: "— 点击开火",
+    placing: "正在放置: {name} ({size} 格) — 方向: {direction}",
+    shipsRemaining: "剩余战舰: {n}/{total}",
+    gameOver: "游戏结束",
+    waitingForBattle: "等待战斗开始...",
+    shipPlacement: "🚢 战舰放置 — 放置全部 {n} 艘战舰即可开始",
+    yourTurn: "🎯 你的回合 — 点击敌方海域开火",
+    opponentTurn: "⏳ 对手正在生成零知识证明...",
+    victory: "🏆 胜利！敌方舰队已歼灭！",
+    defeat: "💀 失败！你的舰队已被击沉。",
+    zkActive: "⚡ Aleo ZK: 已激活",
+    zkLoading: "⚠ Aleo ZK: 加载中...",
+    privacyTitle: "🔐 零知识隐私保障",
+    privacyDesc: "战舰位置是 Aleo ZK 程序的<strong>私有输入</strong>。<code>verify_hit</code> 函数证明命中/未命中结果正确，<strong>不泄露</strong>战舰位字符串。仅布尔结果公开。",
+    noProofs: "尚未生成 ZK 证明。开始开火以生成零知识证明！",
+    shipsPrivate: "ships (私有):",
+    maskPublic: "mask (公开):",
+    result: "结果:",
+    proofHash: "证明哈希:",
+    zkProofBadge: "✓ ZK 证明",
+    fallbackBadge: "⚠ 回退模式",
+    victoryTitle: "🏆 胜利",
+    defeatTitle: "💀 失败",
+    victoryDesc: "你击沉了敌方舰队！",
+    defeatDesc: "你的舰队已被摧毁。",
+    proofSummary: "所有命中/未命中结果均通过 Aleo 零知识证明验证。",
+    playAgain: "再玩一局",
+    initializing: "正在初始化 ZK 引擎...",
+    loadingDesc: "正在加载 Aleo WebAssembly 运行时以生成零知识证明",
+    encrypted: "🔒 已加密",
+    rotate: "↻ 旋转",
+    horizontal: "水平",
+    vertical: "垂直",
+    destroyer: "驱逐舰",
+    frigate: "护卫舰",
+    submarine: "潜水艇",
+    langLabel: "EN",
+  },
+  en: {
+    title: "Shadow Fleet",
+    subtitle: "隐海战舰",
+    tagline: "ZK Battleship on Aleo — Zero-Knowledge Naval Combat",
+    yourFleet: "Your Fleet",
+    enemyWaters: "Enemy Waters",
+    placeYourShips: "— Place Your Ships",
+    clickToFire: "— Click to Fire",
+    placing: "Placing: {name} ({size} cells) — Direction: {direction}",
+    shipsRemaining: "Ships remaining: {n}/{total}",
+    gameOver: "Game Over",
+    waitingForBattle: "Waiting for battle...",
+    shipPlacement: "🚢 Ship Placement — Place all {n} ships to begin",
+    yourTurn: "🎯 Your turn — Click enemy waters to fire",
+    opponentTurn: "⏳ Opponent is calculating ZK proof...",
+    victory: "🏆 Victory! Enemy fleet destroyed!",
+    defeat: "💀 Defeat! Your fleet was sunk.",
+    zkActive: "⚡ Aleo ZK: ACTIVE",
+    zkLoading: "⚠ Aleo ZK: Loading...",
+    privacyTitle: "🔐 Zero-Knowledge Privacy Guarantee",
+    privacyDesc: "Ship positions are <strong>private inputs</strong> to the Aleo ZK program. The <code>verify_hit</code> function proves a hit/miss is correct <strong>without revealing</strong> the ship bitstring. Only the boolean result is public.",
+    noProofs: "No ZK proofs generated yet. Start firing to generate zero-knowledge proofs!",
+    shipsPrivate: "ships (private):",
+    maskPublic: "mask (public):",
+    result: "result:",
+    proofHash: "proof hash:",
+    zkProofBadge: "✓ ZK PROOF",
+    fallbackBadge: "⚠ FALLBACK",
+    victoryTitle: "🏆 VICTORY",
+    defeatTitle: "💀 DEFEAT",
+    victoryDesc: "You sunk the enemy fleet!",
+    defeatDesc: "Your fleet was destroyed.",
+    proofSummary: "All hit/miss results were verified via Aleo zero-knowledge proofs.",
+    playAgain: "Play Again",
+    initializing: "Initializing ZK Engine...",
+    loadingDesc: "Loading Aleo WebAssembly runtime for zero-knowledge proof generation",
+    encrypted: "🔒 ENCRYPTED",
+    rotate: "↻ Rotate",
+    horizontal: "horizontal",
+    vertical: "vertical",
+    destroyer: "Destroyer",
+    frigate: "Frigate",
+    submarine: "Submarine",
+    langLabel: "中",
+  },
+};
+
+let currentLang = localStorage.getItem("lang") || "zh";
+
+function t(key, params = {}) {
+  let str = I18N[currentLang][key] || I18N.en[key] || key;
+  for (const [k, v] of Object.entries(params)) {
+    str = str.replace(`{${k}}`, v);
+  }
+  return str;
+}
+
+function getShipName(ship) {
+  const key = ship.name.toLowerCase();
+  return t(key) || ship.name;
+}
+
+function toggleLang() {
+  currentLang = currentLang === "zh" ? "en" : "zh";
+  localStorage.setItem("lang", currentLang);
+  document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
+  render();
+}
+
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
@@ -75,7 +191,7 @@ function addProofLog(func, ships, publicInput, result, zkProof) {
   const entry = {
     timestamp: new Date().toLocaleTimeString(),
     function: func,
-    shipsHidden: "🔒 ENCRYPTED",
+    shipsHidden: t("encrypted"),
     publicInput: publicInput,
     result: result,
     zkProof: zkProof,
@@ -229,27 +345,32 @@ function render() {
   app.innerHTML = `
     <div class="game-container">
       <header class="game-header">
-        <h1>隐海战舰 <span class="subtitle">SHADOW FLEET</span></h1>
-        <p class="tagline">ZK Battleship on Aleo — Zero-Knowledge Naval Combat</p>
+        <button class="lang-toggle" onclick="window.toggleLang()">${t("langLabel")}</button>
+        <h1>${t("title")} <span class="subtitle">${t("subtitle")}</span></h1>
+        <p class="tagline">${t("tagline")}</p>
       </header>
       <div class="game-main">
         <div class="board-section">
-          <h2>Your Fleet ${state.phase === "placement" ? "— Place Your Ships" : ""}</h2>
+          <h2>${t("yourFleet")} ${state.phase === "placement" ? t("placeYourShips") : ""}</h2>
           <p class="board-info">
             ${state.phase === "placement"
-              ? `Placing: ${SHIPS[state.placingShipIndex]?.name || "Done"} (${SHIPS[state.placingShipIndex]?.size || 0} cells) — Direction: ${state.placementDirection}`
-              : `Ships remaining: ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}`
+              ? t("placing", {
+                  name: getShipName(SHIPS[state.placingShipIndex] || { name: "Done" }),
+                  size: SHIPS[state.placingShipIndex]?.size || 0,
+                  direction: t(state.placementDirection),
+                })
+              : t("shipsRemaining", { n: state.playerShipsRemaining, total: TOTAL_SHIP_CELLS })
             }
           </p>
           ${renderGrid("player")}
-          ${state.phase === "placement" ? '<button class="dir-btn" onclick="window.toggleDir()">↻ Rotate</button>' : ""}
+          ${state.phase === "placement" ? `<button class="dir-btn" onclick="window.toggleDir()">${t("rotate")}</button>` : ""}
         </div>
         <div class="board-section">
-          <h2>Enemy Waters ${state.phase === "battle" ? "— Click to Fire" : ""}</h2>
+          <h2>${t("enemyWaters")} ${state.phase === "battle" ? t("clickToFire") : ""}</h2>
           <p class="board-info">
             ${state.phase === "battle"
-              ? `Ships remaining: ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS}`
-              : state.phase === "gameover" ? "Game Over" : "Waiting for battle..."
+              ? t("shipsRemaining", { n: state.opponentShipsRemaining, total: TOTAL_SHIP_CELLS })
+              : state.phase === "gameover" ? t("gameOver") : t("waitingForBattle")
             }
           </p>
           ${renderGrid("opponent")}
@@ -266,8 +387,8 @@ function renderLoading() {
   return `
     <div class="loading-screen">
       <div class="loading-spinner"></div>
-      <h2>Initializing ZK Engine...</h2>
-      <p>Loading Aleo WebAssembly runtime for zero-knowledge proof generation</p>
+      <h2>${t("initializing")}</h2>
+      <p>${t("loadingDesc")}</p>
     </div>
   `;
 }
@@ -323,18 +444,16 @@ function renderGrid(side) {
 function renderStatusBar() {
   let status = "";
   if (state.phase === "placement") {
-    status = `🚢 Ship Placement — Place all ${SHIPS.length} ships to begin`;
+    status = t("shipPlacement", { n: SHIPS.length });
   } else if (state.phase === "battle") {
-    status = state.currentTurn === "player"
-      ? "🎯 Your turn — Click enemy waters to fire"
-      : "⏳ Opponent is calculating ZK proof...";
+    status = state.currentTurn === "player" ? t("yourTurn") : t("opponentTurn");
   } else if (state.phase === "gameover") {
-    status = state.winner === "player" ? "🏆 Victory! Enemy fleet destroyed!" : "💀 Defeat! Your fleet was sunk.";
+    status = state.winner === "player" ? t("victory") : t("defeat");
   }
 
   const zkStatus = state.zkEnabled
-    ? '<span class="zk-badge zk-active">⚡ Aleo ZK: ACTIVE</span>'
-    : '<span class="zk-badge zk-fallback">⚠ Aleo ZK: Loading...</span>';
+    ? `<span class="zk-badge zk-active">${t("zkActive")}</span>`
+    : `<span class="zk-badge zk-fallback">${t("zkLoading")}</span>`;
 
   return `
     <div class="status-left">${status}</div>
@@ -348,14 +467,13 @@ function renderStatusBar() {
 function renderProofPanel() {
   const privacyNote = `
     <div class="privacy-note">
-      <h3>🔐 Zero-Knowledge Privacy Guarantee</h3>
-      <p>Ship positions are <strong>private inputs</strong> to the Aleo ZK program. The <code>verify_hit</code> function proves a hit/miss is correct
-      <strong>without revealing</strong> the ship bitstring. Only the boolean result is public.</p>
+      <h3>${t("privacyTitle")}</h3>
+      <p>${t("privacyDesc")}</p>
     </div>
   `;
 
   if (state.proofLog.length === 0) {
-    return privacyNote + `<div class="proof-empty">No ZK proofs generated yet. Start firing to generate zero-knowledge proofs!</div>`;
+    return privacyNote + `<div class="proof-empty">${t("noProofs")}</div>`;
   }
 
   const logHtml = state.proofLog.map(entry => `
@@ -364,14 +482,14 @@ function renderProofPanel() {
         <span class="proof-func">${entry.function}()</span>
         <span class="proof-time">${entry.timestamp}</span>
         <span class="proof-badge ${entry.zkProof ? "badge-real" : "badge-fallback"}">
-          ${entry.zkProof ? "✓ ZK PROOF" : "⚠ FALLBACK"}
+          ${entry.zkProof ? t("zkProofBadge") : t("fallbackBadge")}
         </span>
       </div>
       <div class="proof-details">
-        <div class="proof-row"><span>ships (private):</span> <code>${entry.shipsHidden}</code></div>
-        <div class="proof-row"><span>mask (public):</span> <code>${entry.publicInput}u32</code></div>
-        <div class="proof-row"><span>result:</span> <code class="proof-result">${entry.result}</code></div>
-        <div class="proof-row"><span>proof hash:</span> <code class="proof-hash">${entry.proofHash}</code></div>
+        <div class="proof-row"><span>${t("shipsPrivate")}</span> <code>${entry.shipsHidden}</code></div>
+        <div class="proof-row"><span>${t("maskPublic")}</span> <code>${entry.publicInput}u32</code></div>
+        <div class="proof-row"><span>${t("result")}</span> <code class="proof-result">${entry.result}</code></div>
+        <div class="proof-row"><span>${t("proofHash")}</span> <code class="proof-hash">${entry.proofHash}</code></div>
       </div>
     </div>
   `).join("");
@@ -388,10 +506,10 @@ function renderGameOver() {
   return `
     <div class="game-over-overlay">
       <div class="game-over-modal">
-        <h2>${state.winner === "player" ? "🏆 VICTORY" : "💀 DEFEAT"}</h2>
-        <p>${state.winner === "player" ? "You sunk the enemy fleet!" : "Your fleet was destroyed."}</p>
-        <p class="proof-summary">All hit/miss results were verified via Aleo zero-knowledge proofs.</p>
-        <button class="restart-btn" onclick="window.restart()">Play Again</button>
+        <h2>${state.winner === "player" ? t("victoryTitle") : t("defeatTitle")}</h2>
+        <p>${state.winner === "player" ? t("victoryDesc") : t("defeatDesc")}</p>
+        <p class="proof-summary">${t("proofSummary")}</p>
+        <button class="restart-btn" onclick="window.restart()">${t("playAgain")}</button>
       </div>
     </div>
   `;
@@ -401,6 +519,7 @@ function renderGameOver() {
 window.placeShip = handlePlacementClick;
 window.fireAt = playerFire;
 window.toggleDir = togglePlacementDirection;
+window.toggleLang = toggleLang;
 window.restart = () => {
   state.phase = "placement";
   state.playerShips = 0;
@@ -420,6 +539,8 @@ window.restart = () => {
 };
 
 // ===== INITIALIZATION =====
+document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
+
 // Start in fallback mode, switch to ZK when WASM is ready
 setTimeout(() => {
   if (state.phase === "loading") {
