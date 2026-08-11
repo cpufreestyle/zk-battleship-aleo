@@ -62,6 +62,33 @@ const I18N = {
     htpEnd1: "点击「再来一局」重新开始游戏",
     htpEnd2: "所有命中/未命中结果均通过 Aleo 零知识证明验证",
     htpTitle: "📋 操作指南 — How to Play",
+    // Step-by-step contextual hints
+    hintLoading: "⏳ 正在加载 Aleo 零知识证明引擎，请稍候...",
+    hintLoadingEn: "Loading Aleo ZK proof engine, please wait...",
+    hintPlace1: "👋 欢迎来隐海战舰！请在左侧网格点击放置第一艘战舰 — 驱逐舰（3格）",
+    hintPlace1En: "Welcome! Click the left grid to place your first ship — Destroyer (3 cells)",
+    hintPlace2: "✅ 驱逐舰已就位！继续放置第二艘 — 护卫舰（2格），可点「旋转方向」切换",
+    hintPlace2En: "Destroyer placed! Place the second ship — Frigate (2 cells), click Rotate to change direction",
+    hintPlace3: "✅ 护卫舰已就位！放置最后一艘 — 潜水艇（2格）",
+    hintPlace3En: "Frigate placed! Place the last ship — Submarine (2 cells)",
+    hintPlaceOverlap: "⚠️ 该位置已有战舰或超出边界，请选择其他位置",
+    hintPlaceOverlapEn: "⚠️ That position overlaps or is out of bounds, try another spot",
+    hintBattleStart: "🚀 战斗开始！点击右侧敌方海域的格子开火。💥=命中 🌊=未命中",
+    hintBattleStartEn: "🚀 Battle begins! Click enemy grid cells to fire. 💥=Hit 🌦=Miss",
+    hintBattleHit: "💥 命中！ZK 证明已验证你击中了敌舰，但敌方战舰位置仍加密",
+    hintBattleHitEn: "💥 Hit! ZK proof verified you hit an enemy ship, but positions stay encrypted",
+    hintBattleMiss: "🌊 未命中！ZK 证明验证了结果，敌方此处无战舰",
+    hintBattleMissEn: "🌊 Miss! ZK proof verified the result — no ship at this location",
+    hintBattleOpponent: "⏳ 对手回合 — 敌方正在用 ZK 证明验证对你的射击结果...",
+    hintBattleOpponentEn: "⏳ Opponent's turn — verifying their shot via ZK proof...",
+    hintBattleOpponentHit: "💥 敌方击中了你的战舰！剩余战舰格数减少",
+    hintBattleOpponentHitEn: "💥 Enemy hit your ship! Remaining ship cells decreased",
+    hintBattleOpponentMiss: "🌊 敌方未命中你的战舰",
+    hintBattleOpponentMissEn: "🌊 Enemy missed your ships",
+    hintVictory: "🏆 恭喜！你击沉了敌方全部舰队！所有结果均通过 ZK 证明验证",
+    hintVictoryEn: "🏆 Congratulations! You sunk the entire enemy fleet! All results verified via ZK proofs",
+    hintDefeat: "💀 你的舰队被击沉了。再来一局试试？",
+    hintDefeatEn: "💀 Your fleet was sunk. Try again?",
   },
   en: {
     title: "Shadow Fleet",
@@ -122,6 +149,33 @@ const I18N = {
     htpEnd1: "Click \"Play Again\" to restart",
     htpEnd2: "All hit/miss results verified via Aleo zero-knowledge proofs",
     htpTitle: "📋 How to Play",
+    // Step-by-step contextual hints
+    hintLoading: "⏳ Loading Aleo ZK proof engine, please wait...",
+    hintLoadingEn: "Loading Aleo ZK proof engine, please wait...",
+    hintPlace1: "👋 Welcome to Shadow Fleet! Click the left grid to place your first ship — Destroyer (3 cells)",
+    hintPlace1En: "Welcome! Click the left grid to place your first ship — Destroyer (3 cells)",
+    hintPlace2: "✅ Destroyer placed! Place the second ship — Frigate (2 cells), click Rotate to change direction",
+    hintPlace2En: "Destroyer placed! Place the second ship — Frigate (2 cells), click Rotate to change direction",
+    hintPlace3: "✅ Frigate placed! Place the last ship — Submarine (2 cells)",
+    hintPlace3En: "Frigate placed! Place the last ship — Submarine (2 cells)",
+    hintPlaceOverlap: "⚠️ That position overlaps or is out of bounds, try another spot",
+    hintPlaceOverlapEn: "⚠️ That position overlaps or is out of bounds, try another spot",
+    hintBattleStart: "🚀 Battle begins! Click enemy grid cells to fire. 💥=Hit 🌦=Miss",
+    hintBattleStartEn: "🚀 Battle begins! Click enemy grid cells to fire. 💥=Hit 🌦=Miss",
+    hintBattleHit: "💥 Hit! ZK proof verified you hit an enemy ship, but positions stay encrypted",
+    hintBattleHitEn: "💥 Hit! ZK proof verified you hit an enemy ship, but positions stay encrypted",
+    hintBattleMiss: "🌊 Miss! ZK proof verified the result — no ship at this location",
+    hintBattleMissEn: "🌊 Miss! ZK proof verified the result — no ship at this location",
+    hintBattleOpponent: "⏳ Opponent's turn — verifying their shot via ZK proof...",
+    hintBattleOpponentEn: "⏳ Opponent's turn — verifying their shot via ZK proof...",
+    hintBattleOpponentHit: "💥 Enemy hit your ship! Remaining ship cells decreased",
+    hintBattleOpponentHitEn: "💥 Enemy hit your ship! Remaining ship cells decreased",
+    hintBattleOpponentMiss: "🌊 Enemy missed your ships",
+    hintBattleOpponentMissEn: "🌊 Enemy missed your ships",
+    hintVictory: "🏆 Congratulations! You sunk the entire enemy fleet! All results verified via ZK proofs",
+    hintVictoryEn: "🏆 Congratulations! You sunk the entire enemy fleet! All results verified via ZK proofs",
+    hintDefeat: "💀 Your fleet was sunk. Try again?",
+    hintDefeatEn: "💀 Your fleet was sunk. Try again?",
   },
 };
 
@@ -189,7 +243,24 @@ const state = {
   proofLog: [],
   zkEnabled: false,
   settingsOpen: false,
+  currentHint: "",
 };
+
+// ===== CONTEXTUAL HINTS =====
+function th(key) {
+  // Returns hint in current language (zh uses key, en uses key+En)
+  if (currentLang === "en") return I18N.en[key + "En"] || I18N.en[key] || key;
+  return I18N.zh[key] || key;
+}
+
+function updateHint(hintKey) {
+  state.currentHint = hintKey;
+}
+
+function getHintText() {
+  if (!state.currentHint) return "";
+  return th(state.currentHint);
+}
 
 // ===== ZK VERIFICATION =====
 async function zkVerifyHit(shipsBitstring, mask) {
@@ -298,18 +369,22 @@ async function playerFire(row, col) {
   if (isHit) {
     state.playerHits |= mask;
     state.opponentShipsRemaining--;
+    updateHint("hintBattleHit");
+  } else {
+    updateHint("hintBattleMiss");
   }
-  render();
 
   const victory = await zkVerifyVictory(state.opponentShips, state.playerHits);
   if (victory) {
     state.phase = "gameover";
     state.winner = "player";
+    updateHint("hintVictory");
     render();
     return;
   }
 
   state.currentTurn = "opponent";
+  updateHint("hintBattleOpponent");
   render();
   setTimeout(() => opponentFire(), 800);
 }
@@ -329,6 +404,9 @@ async function opponentFire() {
   if (isHit) {
     state.opponentHits |= mask;
     state.playerShipsRemaining--;
+    updateHint("hintBattleOpponentHit");
+  } else {
+    updateHint("hintBattleOpponentMiss");
   }
   render();
 
@@ -336,6 +414,7 @@ async function opponentFire() {
   if (victory) {
     state.phase = "gameover";
     state.winner = "opponent";
+    updateHint("hintDefeat");
     render();
     return;
   }
@@ -355,8 +434,16 @@ function handlePlacementClick(row, col) {
   for (let i = 0; i < ship.size; i++) {
     const r = horizontal ? row : row + i;
     const c = horizontal ? col + i : col;
-    if (r >= GRID_SIZE || c >= GRID_SIZE) { render(); return; }
-    if (isBitSet(state.playerShips, r, c)) { render(); return; }
+    if (r >= GRID_SIZE || c >= GRID_SIZE) {
+      updateHint("hintPlaceOverlap");
+      render();
+      return;
+    }
+    if (isBitSet(state.playerShips, r, c)) {
+      updateHint("hintPlaceOverlap");
+      render();
+      return;
+    }
     cells.push(cellToBit(r, c));
   }
 
@@ -368,6 +455,11 @@ function handlePlacementClick(row, col) {
   if (state.placingShipIndex >= SHIPS.length) {
     state.opponentShips = generateRandomShips();
     state.phase = "battle";
+    updateHint("hintBattleStart");
+  } else if (state.placingShipIndex === 1) {
+    updateHint("hintPlace2");
+  } else if (state.placingShipIndex === 2) {
+    updateHint("hintPlace3");
   }
   render();
 }
@@ -399,6 +491,7 @@ function render() {
         </div>
       </header>
       ${renderHowToPlay()}
+      ${state.currentHint ? `<div class="hint-bar">${getHintText()}</div>` : ""}
       <div class="game-main">
         <div class="board-section">
           <h2>${t("yourFleet")} ${state.phase === "placement" ? t("placeYourShips") : ""}</h2>
@@ -666,6 +759,7 @@ window.restart = () => {
   state.placingShipIndex = 0;
   state.placementDirection = "horizontal";
   state.proofLog = [];
+  updateHint("hintPlace1");
   render();
 };
 
@@ -677,6 +771,7 @@ setTimeout(() => {
   if (state.phase === "loading") {
     state.zkEnabled = false;
     state.phase = "placement";
+    updateHint("hintPlace1");
     render();
   }
 }, 3000);
@@ -685,6 +780,7 @@ if (window.__zkReady) {
   state.zkEnabled = true;
   state.aleoAddress = window.__zkAddress;
   state.phase = "placement";
+  updateHint("hintPlace1");
   render();
 } else {
   window.addEventListener("zk-ready", () => {
@@ -692,6 +788,7 @@ if (window.__zkReady) {
     state.aleoAddress = window.__zkAddress;
     if (state.phase === "loading") {
       state.phase = "placement";
+      updateHint("hintPlace1");
     }
     render();
   });
@@ -700,6 +797,7 @@ if (window.__zkReady) {
     if (state.phase === "loading") {
       state.zkEnabled = false;
       state.phase = "placement";
+      updateHint("hintPlace1");
       render();
     }
   });

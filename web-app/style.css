@@ -161,6 +161,24 @@ body {
 }
 .header-link:hover { background: rgba(52, 152, 219, 0.2); transform: translateY(-1px); }
 
+/* ===== HINT BAR ===== */
+.hint-bar {
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.15), rgba(168, 85, 247, 0.1));
+  border: 1px solid rgba(52, 152, 219, 0.3);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 20px;
+  font-size: 0.88rem;
+  color: var(--color-text);
+  text-align: center;
+  animation: hintSlide 0.4s ease;
+}
+
+@keyframes hintSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ===== HOW TO PLAY ===== */
 .how-to-play {
   background: var(--bg-panel);
