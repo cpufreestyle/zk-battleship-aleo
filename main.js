@@ -25,7 +25,21 @@ const FEEL = {
   INCOMING_MS: 820,   // 「敌方来袭」提示 → 对手真正开火
 };
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms) => new Promise((r) => setTimeout(r, Math.max(0, Math.round(ms / gameSpeed))));
+
+// 游戏速度倍数：越大越快。所有手感节奏（FEEL）都按它缩放。
+let gameSpeed = 1;
+const SPEED_OPTIONS = [
+  { mult: 0.5, label: "0.5× 慢" },
+  { mult: 1, label: "1× 标准" },
+  { mult: 2, label: "2× 快" },
+  { mult: 4, label: "4× 神速" },
+  { mult: 8, label: "8× 闪电" },
+];
+window.setGameSpeed = (mult) => {
+  gameSpeed = parseFloat(mult);
+  render();
+};
 
 // 输入闸：锁定/结算动画期间屏蔽连点，防止一次点两格
 let inputLocked = false;
@@ -610,7 +624,7 @@ function renderTutorial() {
         <button class="tut-skip" onclick="window.closeTutorial()">跳过</button>
         <div class="tut-nav">
           ${tutorialIndex > 0 ? `<button class="tut-prev" onclick="window.tutorialPrev()">上一步</button>` : ""}
-          <button class="tut-next" onclick="window.tutorialNext()">${isLast ? "开始游戏 🚀" : "下一步"}</button>
+          <button class="tut-next" onclick="${isLast ? "window.closeTutorial(); window.startGame();" : "window.tutorialNext()"}">${isLast ? "开始游戏 🚀" : "下一步"}</button>
         </div>
       </div>
     </div>`;
@@ -619,6 +633,9 @@ function renderTutorial() {
 window.openTutorial = () => {
   tutorialIndex = 0;
   renderTutorial();
+  // 点遮罩空白处也能关掉教程，避免挡住下面的「开始游戏」按钮
+  const root = document.getElementById("tutorial-overlay");
+  if (root) root.onclick = (e) => { if (e.target === root) window.closeTutorial(); };
   sfx.click();
 };
 window.closeTutorial = () => {
@@ -634,7 +651,102 @@ window.tutorialPrev = () => {
   if (tutorialIndex > 0) { tutorialIndex--; renderTutorial(); }
 };
 
+// ===== SHIP RENDERING（把多格连成一艘钢制战舰，而不是 Emoji）=====
+let shipCellMap = {};
+
+// 由 playerShipGroups 反推每格在所属船里的角色：船尾 / 船身 / 船首 / 是否有舰桥 / 船型
+function buildShipCellMap() {
+  const map = {};
+  for (const g of playerShipGroups) {
+    const cells = [];
+    for (let b = 0; b < 25; b++) if (g.mask & (1 << b)) cells.push(b);
+    if (!cells.length) continue;
+    const rows = cells.map((b) => Math.floor(b / 5));
+    const horiz = new Set(rows).size === 1;
+    cells.sort((a, b) => (horiz ? (a % 5) - (b % 5) : Math.floor(a / 5) - Math.floor(b / 5)));
+    const mid = Math.floor(cells.length / 2);
+    const type = g.name; // Destroyer / Frigate / Submarine
+    cells.forEach((b, i) => {
+      let role = "mid";
+      if (i === 0) role = "stern";
+      if (i === cells.length - 1) role = "bow";
+      map[b] = { horiz, role, tower: i === mid, idx: b, type };
+    });
+  }
+  return map;
+}
+
+// 每类船的配色与细节，让三艘船一眼可辨
+const SHIP_STYLE = {
+  Destroyer: { grad: ["#c2cedd", "#8a9bb0", "#4f5f72"], stroke: "#33414f", deck: "#cad6e2", tower: "destroyer" },
+  Frigate:   { grad: ["#9fd0ec", "#5b9fd1", "#2c6aa6"], stroke: "#23527e", deck: "#dff1fb", tower: "frigate" },
+  Submarine: { grad: ["#9fceb0", "#5ba07a", "#2f6b4c"], stroke: "#234d39", deck: "#cdeede", tower: "submarine" },
+};
+
+// 船体轮廓：按角色(船首/船尾/船身)和船型给不同造型
+function hullPath(role, type) {
+  if (type === "Submarine") {
+    // 圆润的潜艇艇身（胶囊形），仅船首略带尖角
+    if (role === "bow") return "M -8,46 Q -8,32 10,32 L 88,32 Q 104,32 112,42 L 122,50 L 112,58 Q 104,68 88,68 L 10,68 Q -8,68 -8,54 Z";
+    return "M -8,32 L 108,32 Q 116,32 116,50 Q 116,68 108,68 L -8,68 Q -16,68 -16,50 Q -16,32 -8,32 Z";
+  }
+  if (role === "bow") return "M -8,46 Q -8,30 8,30 L 90,30 Q 100,32 106,42 L 122,50 L 106,58 Q 100,68 90,70 L 8,70 Q -8,70 -8,54 Z";
+  if (role === "stern") return "M -8,40 L -2,34 L 92,34 Q 108,34 108,50 Q 108,66 92,66 L -2,66 L -8,60 Z";
+  return "M -8,30 L 108,30 Q 116,30 116,50 Q 116,70 108,70 L -8,70 Q -16,70 -16,50 Q -16,30 -8,30 Z";
+}
+
+// 中间格的上层建筑：每类船形态不同
+function towerDetail(type) {
+  if (type === "Frigate") {
+    // 轻巧：小舰桥 + 单管小炮，整体更纤细
+    return (
+      '<rect x="40" y="18" width="22" height="14" rx="3" fill="#dff1fb" stroke="#23527e" stroke-width="1.2"/>' +
+      '<rect x="46" y="11" width="10" height="8" rx="2" fill="#bfe3f7" stroke="#23527e" stroke-width="1"/>' +
+      '<rect x="50" y="48" width="22" height="4" rx="2" fill="#1f4f7a"/>'
+    );
+  }
+  if (type === "Submarine") {
+    // 指挥塔围壳(sail) + 潜望镜，无火炮
+    return (
+      '<path d="M 38,32 Q 38,8 50,8 Q 62,8 62,32 Z" fill="#4f8470" stroke="#234d39" stroke-width="1.5"/>' +
+      '<rect x="48" y="0" width="4" height="9" rx="2" fill="#234d39"/>' +
+      '<rect x="44" y="20" width="12" height="3" rx="1.5" fill="#2f6b4c"/>'
+    );
+  }
+  // Destroyer：舰桥 + 桅杆 + 双联炮塔 + 炮管
+  return (
+    '<rect x="33" y="12" width="34" height="20" rx="4" fill="#d3dee9" stroke="#7c8b9a" stroke-width="1.5"/>' +
+    '<rect x="41" y="5" width="18" height="9" rx="2" fill="#aebccd" stroke="#7c8b9a" stroke-width="1"/>' +
+    '<circle cx="50" cy="50" r="7" fill="#34495e" stroke="#1f2d3a" stroke-width="1.5"/>' +
+    '<rect x="50" y="47" width="30" height="5" rx="2.5" fill="#2c3e50"/>'
+  );
+}
+
+// 单格船体片段：横向船体 + 船首尖角 + 舰桥/炮塔/潜望塔；纵向用 rotate 复用同一套坐标
+function shipSegmentSVG(info) {
+  const { horiz, role, tower, idx, type } = info;
+  const style = SHIP_STYLE[type] || SHIP_STYLE.Destroyer;
+  const gid = "hull-" + idx + "-" + (type || "x");
+  const hull = hullPath(role, type);
+  const details = tower ? towerDetail(type) : "";
+  // 竖船：在 SVG 内部用 <g> 旋转，不要旋转 <svg> 元素本身，
+  // 否则 rotate() 会改变整个 SVG 在父级里的 bounding box，导致竖船偏移到相邻格。
+  const body =
+    '<path d="' + hull + '" fill="url(#' + gid + ')" stroke="' + style.stroke + '" stroke-width="2" stroke-linejoin="round"/>' +
+    '<rect x="-8" y="40" width="116" height="6" rx="3" fill="' + style.deck + '" opacity="0.65"/>' +
+    details;
+  return (
+    '<svg class="ship-svg" viewBox="-20 -16 142 132" preserveAspectRatio="xMidYMid meet">' +
+    '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="' + style.grad[0] + '"/><stop offset="0.55" stop-color="' + style.grad[1] + '"/><stop offset="1" stop-color="' + style.grad[2] + '"/>' +
+    "</linearGradient></defs>" +
+    (horiz ? body : '<g transform="rotate(90 56 50)">' + body + "</g>") +
+    "</svg>"
+  );
+}
+
 function renderGrid(side) {
+  if (side === "player") shipCellMap = buildShipCellMap();
   let html = `<div class="grid"><div class="grid-header"><div></div>`;
   for (let c = 0; c < GRID_SIZE; c++) {
     html += `<div class="grid-label">${String.fromCharCode(65 + c)}</div>`;
@@ -660,7 +772,8 @@ function renderGrid(side) {
         }
       } else if (isPlayer && isBitSet(ships, r, c)) {
         cls += " cell-ship";
-        content = "🚢";
+        const info = shipCellMap[cellToBit(r, c)];
+        content = info ? shipSegmentSVG(info) : "🚢";
       } else {
         cls += " cell-water";
       }
@@ -696,21 +809,44 @@ function renderStatusBar() {
     status = state.winner === "player" ? "🏆 胜利！敌方舰队已被全歼！" : "💀 失败！你的舰队沉没了。";
   }
 
-  const zkStatus = state.zkEnabled
-    ? '<span class="zk-badge zk-active">🔒 零知识验证 · 已启用</span>'
-    : '<span class="zk-badge zk-fallback">⚠ 本地校验模式</span>';
+  // 三态：加载中（引擎正在 Worker 里实例化 wasm）/ 已启用（真实 ZK）/ 降级（环境不支持）
+  const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
+  const zkStatus = zkLoading
+    ? '<span class="zk-badge zk-loading">⏳ 零知识引擎加载中…</span>'
+    : state.zkEnabled
+      ? '<span class="zk-badge zk-active">🔒 零知识验证 · 已启用</span>'
+      : '<span class="zk-badge zk-fallback">⚠ 本地校验模式</span>';
+
+  const speedSel = `
+    <label class="speed-sel">
+      <span class="speed-sel-label">⚡速度</span>
+      <select onchange="window.setGameSpeed(this.value)" aria-label="游戏速度">
+        ${SPEED_OPTIONS.map((o) => `<option value="${o.mult}"${gameSpeed === o.mult ? " selected" : ""}>${o.label}</option>`).join("")}
+      </select>
+    </label>`;
 
   return `
     <div class="status-left">${status}</div>
     <div class="status-right">
       ${zkStatus}
       ${state.aleoAddress ? `<span class="addr-badge">Aleo: ${state.aleoAddress.substring(0, 12)}...</span>` : ""}
+      ${speedSel}
     </div>`;
 }
 
 function renderProofPanel() {
-  const privacyNote = state.zkEnabled
+  const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
+  const privacyNote = zkLoading
     ? `
+    <div class="privacy-note is-loading">
+      <div class="pn-icon" aria-hidden="true">⏳</div>
+      <div class="pn-body">
+        <h3>正在启用零知识加密…</h3>
+        <p>Aleo 零知识引擎正在后台加载（约 21MB wasm，首次稍慢）。加载完成后船位将作为 ZK 程序的<strong>私有输入</strong>被加密保护，游戏可正常进行。</p>
+      </div>
+    </div>`
+    : state.zkEnabled
+      ? `
     <div class="privacy-note">
       <div class="pn-icon" aria-hidden="true">🔒</div>
       <div class="pn-body">
@@ -718,7 +854,7 @@ function renderProofPanel() {
         <p>你的船位作为 ZK 程序的<strong>私有输入</strong>被加密保护——每一发命中/未中都由零知识证明验证，<strong>游戏过程中绝不向对手泄露</strong>船的位置。</p>
       </div>
     </div>`
-    : `
+      : `
     <div class="privacy-note is-fallback">
       <div class="pn-icon" aria-hidden="true">⚠</div>
       <div class="pn-body">
@@ -849,11 +985,6 @@ if (window.__zkReady) {
   state.aleoAddress = window.__zkAddress;
 }
 render();
-
-// 首次访问自动弹出玩法引导（用 localStorage 标记看过的玩家不再打扰）
-try {
-  if (!localStorage.getItem(TUTORIAL_KEY)) window.openTutorial();
-} catch (e) {}
 
 window.addEventListener("zk-ready", () => {
   state.zkEnabled = true;

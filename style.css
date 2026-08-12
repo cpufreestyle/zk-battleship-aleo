@@ -252,17 +252,27 @@ body {
 }
 
 .cell-ship::before {
-  background:
-    radial-gradient(circle at 32% 28%, rgba(120, 230, 170, 0.28), transparent 64%),
-    linear-gradient(135deg, rgba(46, 204, 113, 0.22), transparent 100%);
-  background-color: var(--bg-ship);
-  opacity: 1;
+  background: none;
+  background-color: transparent;
   animation: none;
 }
+/* 钢制战舰：去掉绿色底，让 SVG 连体船体溢出到格缝，读成一艘船 */
 .cell-ship {
   background-color: transparent;
-  border: 1px solid rgba(46, 204, 113, 0.4);
-  box-shadow: inset 0 0 12px rgba(46, 204, 113, 0.22);
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+}
+.ship-svg {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  overflow: visible;
+  z-index: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
 }
 
 .cell-hit {
@@ -399,6 +409,25 @@ body {
   background: var(--warn);
   box-shadow: 0 0 8px var(--warn);
 }
+/* 加载中态：中性蓝 + 旋转环，明确区别于「已启用」与「降级」 */
+.zk-badge.zk-loading {
+  color: var(--info, #5b9dff);
+  background: color-mix(in srgb, var(--info, #5b9dff) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info, #5b9dff) 45%, transparent);
+}
+.zk-badge.zk-loading::before {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--info, #5b9dff) 35%, transparent);
+  border-top-color: var(--info, #5b9dff);
+  background: transparent;
+  box-shadow: none;
+  animation: zkSpin 0.8s linear infinite;
+}
+@keyframes zkSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .zk-badge.zk-loading::before { animation: none; }
+}
 
 .addr-badge {
   font-family: "SF Mono", monospace;
@@ -409,6 +438,38 @@ body {
   border-radius: var(--r-sm);
   border: 1px solid rgba(168, 85, 247, 0.25);
   white-space: nowrap;
+}
+
+/* ===== SPEED SELECTOR ===== */
+.speed-sel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.speed-sel-label {
+  font-size: var(--fs-xs);
+  color: var(--color-text-2);
+  opacity: 0.85;
+}
+.speed-sel select {
+  font-size: var(--fs-xs);
+  font-family: inherit;
+  color: var(--color-text-1);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  padding: 4px 7px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.speed-sel select:hover {
+  border-color: var(--color-accent);
+}
+.speed-sel select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ===== PROOF PANEL ===== */
@@ -457,6 +518,14 @@ body {
   background: rgba(241, 196, 15, 0.12);
   color: var(--warn);
 }
+/* 加载中态：中性蓝，区别于降级（琥珀）与已启用（绿） */
+.privacy-note.is-loading .pn-icon {
+  color: var(--info, #5b9dff);
+  background: color-mix(in srgb, var(--info, #5b9dff) 14%, transparent);
+  border-color: color-mix(in srgb, var(--info, #5b9dff) 45%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--info, #5b9dff) 30%, transparent);
+}
+.privacy-note.is-loading h3 { color: var(--info, #5b9dff); }
 
 .proof-empty { text-align: center; color: var(--color-muted); font-size: var(--fs-sm); padding: 20px; }
 .proof-log { display: flex; flex-direction: column; gap: 8px; }

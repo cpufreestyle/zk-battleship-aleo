@@ -1,31 +1,30 @@
 import {
   Account,
   ProgramManager,
-  initThreadPool,
 } from "@provablehq/sdk";
 
-// Set up message handler BEFORE async init
+// 注意：不要调用 initThreadPool()。它在独立 Worker 上下文里会挂起
+// （60s 超时），主线程那条成功的路径也从未调用它。ProgramManager
+// 单线程执行 verify_hit / verify_victory 完全够用，且初始化 <200ms。
+
 let programManager = null;
 let account = null;
 
 onmessage = async function (e) {
-  const { type, ships, mask, hits, shots } = e.data;
+  const { type, ships, mask, hits } = e.data || {};
 
-  // Wait for init if not ready yet
+  // 主线程在收到本 worker 的 ready 后才发 init，避免消息竞态
   if (type === "init") {
     try {
-      await initThreadPool();
       programManager = new ProgramManager();
       account = new Account();
       programManager.setAccount(account);
-      console.log("Aleo ZK engine initialized, address:", account.address());
       postMessage({
         type: "init_result",
-        address: account.address(),
+        address: account.address().toString(),
       });
     } catch (error) {
-      console.error("ZK init error:", error.message);
-      postMessage({ type: "error", message: error.message, originalType: type });
+      postMessage({ type: "error", message: error && error.message, originalType: type });
     }
     return;
   }
@@ -35,6 +34,9 @@ onmessage = async function (e) {
     return;
   }
 
+  // 输出保持 u32，与 main.js 的 parseInt(result[0]) 契约一致：
+  // verify_hit 返回 (ships & mask)，非零即命中；verify_victory 返回 (ships & hits)，
+  // 等于 ships 即全歼。命中判定在主线程与 worker 两种路径下完全一致。
   const SHADOWFLEET_PROGRAM = `
 program shadowfleet.aleo;
 
@@ -42,39 +44,37 @@ function verify_hit:
     input r0 as u32.private;
     input r1 as u32.public;
     and r0 r1 into r2;
-    ne r2 0u32 into r3;
-    output r3 as bool.private;
+    output r2 as u32.private;
 
 function verify_victory:
     input r0 as u32.private;
     input r1 as u32.public;
     and r0 r1 into r2;
-    eq r2 r0 into r3;
-    output r3 as bool.private;
+    output r2 as u32.private;
 `;
 
   try {
     if (type === "verify_hit") {
-      const executionResponse = await programManager.run(
+      const res = await programManager.run(
         SHADOWFLEET_PROGRAM,
         "verify_hit",
         [`${ships}u32`, `${mask}u32`],
         false,
       );
-      const result = executionResponse.getOutputs();
-      postMessage({ type: "verify_hit_result", result });
+      postMessage({ type: "verify_hit_result", result: res.getOutputs() });
     } else if (type === "verify_victory") {
-      const executionResponse = await programManager.run(
+      const res = await programManager.run(
         SHADOWFLEET_PROGRAM,
         "verify_victory",
         [`${ships}u32`, `${hits}u32`],
         false,
       );
-      const result = executionResponse.getOutputs();
-      postMessage({ type: "verify_victory_result", result });
+      postMessage({ type: "verify_victory_result", result: res.getOutputs() });
     }
   } catch (error) {
-    console.error(`ZK execution error (${type}):`, error.message);
-    postMessage({ type: "error", message: error.message, originalType: type });
+    postMessage({ type: "error", message: error && error.message, originalType: type });
   }
 };
+
+// 绑定好 onmessage 后通知主线程，主线程据此再发 init（握手，消除竞态）
+postMessage({ type: "ready" });

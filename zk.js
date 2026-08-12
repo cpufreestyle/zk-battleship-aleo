@@ -167,8 +167,57 @@ function failToFallback(reason) {
     emitLater(new CustomEvent("zk-error", { detail: diag.reason }));
 }
 
+// ===== Web Worker 接入：把真正阻塞主线程的 Aleo 执行挪到 Worker =====
+// 之前 __zkExecute 直接在主线程跑 programManager.run，每次开火/回合切换
+// 主线程都被 snarkVM 的 WASM 计算冻结几百毫秒~几秒，体感就是「网页卡住」。
+// 现在所有 ZK 计算都转发给 worker.js（独立线程），主线程始终可响应。
+let zkWorker = null;
+let zkWorkerReady = false;
+const zkPending = new Map();
+let zkReqId = 0;
+let zkInitResolve = null;
+let zkInitReject = null;
+
+function setupWorker() {
+    if (typeof Worker === "undefined") return false;
+    try {
+        zkWorker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+        zkWorker.onmessage = (e) => {
+            const d = e.data || {};
+            if (d.type === "ready") {
+                // 握手：worker 已绑定 onmessage，此时再发 init 才安全
+                zkWorker.postMessage({ type: "init" });
+                return;
+            }
+            if (d.type === "init_result") {
+                window.__zkAddress = d.address && d.address.toString ? d.address.toString() : String(d.address);
+                zkWorkerReady = true;
+                if (zkInitResolve) zkInitResolve(d.address);
+            } else if (d.type === "error" && d.originalType === "init") {
+                if (zkInitReject) zkInitReject(new Error(d.message));
+            } else if (d.type === "verify_hit_result" || d.type === "verify_victory_result") {
+                const p = zkPending.get(d.id);
+                if (p) { zkPending.delete(d.id); p.resolve(d.result); }
+            } else if (d.type === "error") {
+                const p = zkPending.get(d.id);
+                if (p) { zkPending.delete(d.id); p.reject(new Error(d.message)); }
+            }
+        };
+    zkWorker.onerror = (ev) => {
+        console.warn("[ZK main] worker error:", ev && (ev.message || ev.filename || ev.type));
+        if (zkInitReject) zkInitReject(new Error("ZK Worker 初始化失败：" + (ev && ev.message)));
+    };
+    zkWorker.onmessageerror = () => console.warn("[ZK main] worker messageerror");
+        return true;
+    } catch (err) {
+        console.warn("[ZK] 创建 Worker 失败，回退主线程降级：", err && err.message);
+        zkWorker = null;
+        return false;
+    }
+}
+
 /**
- * L2 —— 探测通过才动态加载 SDK
+ * L2 —— 探测通过才在 Worker 里初始化 ZK 引擎
  */
 async function initZK() {
     const t0 = performance.now();
@@ -181,32 +230,34 @@ async function initZK() {
         failToFallback();
         return;
     }
+    if (!setupWorker()) {
+        failToFallback("当前环境不支持 Web Worker");
+        return;
+    }
 
     try {
         console.log(
-            `[ZK] wasm 共享内存可用（crossOriginIsolated=${diag.crossOriginIsolated}），开始加载 Aleo 引擎…`,
+            `[ZK] wasm 共享内存可用（crossOriginIsolated=${diag.crossOriginIsolated}），开始在 Worker 加载 Aleo 引擎…`,
         );
 
-        // 动态 import：独立 chunk + 失败可捕获
-        const { Account, ProgramManager } = await withTimeout(
-            import("@provablehq/sdk"),
+        // 不发 init，等 worker 回 ready 后由 onmessage 转发，避免消息竞态
+        // 注意：用 INIT_TIMEOUT_MS（60s）而非 9s。@provablehq/wasm 首次实例化
+        // 要拉 ~21MB 并编译，冷启动常 >9s；旧代码把等待写死成 9000 导致在 worker
+        // 还没拉完 wasm 时就「超时降级」，于是永远走不到真 ZK。60s 给足宽限，
+        // 暖加载（wasm 已缓存）仍 <200ms 即时就绪。
+        await withTimeout(
+            new Promise((res, rej) => { zkInitResolve = res; zkInitReject = rej; }),
             INIT_TIMEOUT_MS,
             "Aleo 引擎加载",
         );
 
-        programManager = new ProgramManager();
-        account = new Account();
-        programManager.setAccount(account);
-
-        const addr = account.address().toString();
         zkReady = true;
         diag.mode = "zk";
-        diag.reason = "真实 ZK 证明已启用";
+        diag.reason = "真实 ZK 证明已启用（运行于 Web Worker，不阻塞主线程）";
         diag.engineLoadMs = Math.round(performance.now() - t0);
 
         window.__zkReady = true;
-        window.__zkAddress = addr;
-        console.log(`[ZK] 引擎就绪（${diag.engineLoadMs}ms），地址：`, addr);
+        console.log(`[ZK] 引擎就绪（${diag.engineLoadMs}ms，Worker 模式），地址：`, window.__zkAddress);
         emitLater(new Event("zk-ready"));
     } catch (e) {
         failToFallback(`Aleo 引擎加载失败：${e && e.message ? e.message : e}`);
@@ -214,22 +265,30 @@ async function initZK() {
 }
 
 /**
- * 执行一次本地 ZK 证明。
- * 契约与旧版一致：返回 outputs 数组；失败抛错由 main.js 兜底。
+ * 执行一次本地 ZK 证明 —— 转发给 Worker，主线程不阻塞。
+ * 契约与旧版一致：返回 outputs 数组（u32 字符串，main.js 用 parseInt 解析）；
+ * 失败抛错由 main.js 兜底降级。
  */
 window.__zkExecute = async function (functionName, inputs) {
-    if (!zkReady || !programManager) throw new Error("ZK engine not ready");
+    if (!zkReady || !zkWorker) throw new Error("ZK engine not ready");
+
+    const id = ++zkReqId;
+    const ships = parseInt(inputs[0], 10);
+    const mask = parseInt(inputs[1], 10);
+    const type = functionName === "verify_hit" ? "verify_hit" : "verify_victory";
 
     try {
-        const response = await withTimeout(
-            programManager.run(SHADOWFLEET_PROGRAM, functionName, inputs, false),
+        return await withTimeout(
+            new Promise((resolve, reject) => {
+                zkPending.set(id, { resolve, reject });
+                zkWorker.postMessage({ type, id, ships, mask });
+            }),
             EXEC_TIMEOUT_MS,
             `ZK 证明 ${functionName}`,
         );
-        return response.getOutputs();
     } catch (e) {
         console.error(`[ZK] 执行失败 ${functionName}:`, e && e.message ? e.message : e);
-        // 一旦执行失败就永久降级，避免后续每回合都重试并拖慢节奏
+        // 一旦执行失败就降级，避免后续每回合都重试并拖慢节奏
         diag.mode = "fallback";
         diag.reason = "ZK 执行失败，已切到本地校验";
         throw e;
