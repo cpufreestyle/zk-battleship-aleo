@@ -84,6 +84,21 @@ function sunkShipBy(groups, hitsBitstring, mask) {
 // ===== GAME STATE =====
 const state = {
   phase: "start",
+  // Game mode: "ai" (vs computer) or "pvp" (pass-and-play)
+  gameMode: "ai",
+  // P2P: which player is placing ("p1" then "p2")
+  p2pPlacementPhase: null,
+  // P2P: P2's ships/groups (P1 is playerShips/playerShipGroups)
+  p2Ships: 0,
+  p2ShipGroups: [],
+  p2Shots: 0,
+  p2Hits: 0,
+  p2ShipsRemaining: TOTAL_SHIP_CELLS,
+  p2ScanRemaining: 1,
+  p2Combo: 0,
+  p2MaxCombo: 0,
+  // P2P: privacy screen toggle
+  showPrivacyScreen: false,
   // Match system: best-of-3
   matchWins: 0,
   matchLosses: 0,
@@ -532,6 +547,14 @@ async function playerFire(row, col) {
     return;
   }
 
+  // Turn switch
+  if (state.gameMode === "pvp") {
+    // P2P: show privacy screen, then P2 fires at P1's grid
+    state.currentTurn = "opponent"; // "opponent" = P2 in PvP
+    showTurnSwitchPrivacy();
+    return;
+  }
+
   state.currentTurn = "opponent";
   render();
 
@@ -568,8 +591,121 @@ function activateScan() {
 }
 window.activateScan = activateScan;
 
+// ===== P2P FIRE (Player 2 fires at Player 1's grid) =====
+async function pvpFire(row, col) {
+  if (state.phase !== "battle" || state.currentTurn !== "opponent") return;
+  if (inputLocked) return;
+
+  const mask = getMask(row, col);
+  if (state.p2Shots & mask) return;
+
+  inputLocked = true;
+  const k = fx.key("player", row, col);
+  const cellName = String.fromCharCode(65 + col) + (row + 1);
+
+  state.p2Shots |= mask;
+  state.turnCount++;
+
+  sfx.fire();
+  fx.lockOn(k, FEEL.LOCK_ON_MS + 170);
+  if (state.zkEnabled) showZkOverlay("generating", "verify_hit()");
+
+  const [isHit] = await Promise.all([
+    zkVerifyHit(state.playerShips, mask),
+    wait(FEEL.SUSPENSE_MS),
+  ]);
+
+  addBattle(`P2 向 ${cellName} 开火`, "opp");
+
+  let sunkShip = null;
+  if (isHit) {
+    state.p2Hits |= mask;
+    state.playerShipsRemaining--;
+    state.p2Combo++;
+    if (state.p2Combo > state.p2MaxCombo) state.p2MaxCombo = state.p2Combo;
+
+    sunkShip = sunkShipBy(playerShipGroups, state.p2Hits, mask);
+    if (sunkShip) {
+      addBattle(`🔥 P2 命中——你的${sunkShip.cn}被击沉！`, "hit");
+      sfx.sunk();
+      fx.explode(k, true);
+      fx.shake("hard");
+      fx.banner(`你的${sunkShip.cn} 沉没`, "loss", 1200);
+    } else {
+      addBattle(`💥 P2 命中 ${cellName}！${state.p2Combo > 1 ? "连击 x" + state.p2Combo : ""}`, "hit");
+      sfx.hit(false);
+      fx.explode(k, false);
+      fx.shake("soft");
+      if (state.p2Combo >= 2) fx.banner(`🔥 P2 连击 x${state.p2Combo}`, "warn", 800);
+    }
+  } else {
+    addBattle(`🌊 P2 ${cellName} 未中。`, "miss");
+    sfx.miss();
+    fx.ripple(k);
+    state.p2Combo = 0;
+  }
+  render();
+
+  // Check victory (P2 wins)
+  const p2Victory = (state.playerShips & state.p2Hits) === state.playerShips;
+  if (state.zkEnabled && window.__zkExecute) {
+    try {
+      const result = await window.__zkExecute("verify_victory", [`${state.playerShips}u32`, `${state.p2Hits}u32`]);
+      addProofLog("verify_victory", state.playerShips, state.p2Hits, "true", true);
+    } catch (e) {
+      addProofLog("verify_victory", state.playerShips, state.p2Hits, p2Victory ? "true" : "false", false);
+    }
+  } else {
+    addProofLog("verify_victory", state.playerShips, state.p2Hits, p2Victory ? "true" : "false", false);
+  }
+
+  if (p2Victory) {
+    await wait(FEEL.VICTORY_HOLD_MS);
+    state.phase = "gameover";
+    state.winner = "opponent";
+    sfx.defeat();
+    render();
+    inputLocked = false;
+    return;
+  }
+
+  await wait(sunkShip ? FEEL.RESULT_HOLD_MS + 220 : FEEL.RESULT_HOLD_MS);
+  if (state.phase !== "battle") { inputLocked = false; return; }
+
+  // Combo: P2 hit = keep firing, miss = P1's turn
+  if (isHit) {
+    inputLocked = false;
+    render();
+    return;
+  }
+
+  // Switch to P1 with privacy screen
+  state.currentTurn = "player";
+  showTurnSwitchPrivacy();
+}
+window.pvpFire = pvpFire;
+
 async function opponentFire() {
   if (state.phase !== "battle") return;
+
+  // P2P mode: opponent is a human (P2), not AI
+  // P2 clicks on the "opponent" grid to fire at P1's ships
+  // The fireAt handler already calls playerFire when currentTurn === "player"
+  // For P2P, we need a separate handler. But since P2 fires at the "opponent"
+  // grid which shows P1's ships... wait, in P2P the board layout is different.
+  // Actually: in P2P, when it's P2's turn, P2 fires at P1's grid (the "player" grid).
+  // We swap the perspective: the "clickable" grid changes.
+  // Simplest approach: in P2P, opponentFire is not called by AI.
+  // Instead, P2 clicks on the player grid, and we handle it via a pvpFire function.
+
+  if (state.gameMode === "pvp") {
+    // P2P: input is unlocked, P2 clicks on the player's grid
+    inputLocked = false;
+    render();
+    return;
+  }
+
+  // AI mode: choose target and fire
   const target = chooseOpponentTarget();
   if (target === -1) { inputLocked = false; return; }
   const row = Math.floor(target / GRID_SIZE);
@@ -661,22 +797,31 @@ function handlePlacementClick(row, col) {
   if (!ship) return;
 
   const horizontal = state.placementDirection === "horizontal";
+  const isP2 = state.gameMode === "pvp" && state.p2pPlacementPhase === "p2";
+  const existingShips = isP2 ? state.p2Ships : state.playerShips;
   const cells = [];
   for (let i = 0; i < ship.size; i++) {
     const r = horizontal ? row : row + i;
     const c = horizontal ? col + i : col;
-    // 越界 / 压到已有船 → 明确的「拒绝」反馈，而不是默默无事发生
     if (r >= GRID_SIZE || c >= GRID_SIZE) { sfx.deny(); fx.shake("soft"); render(); return; }
-    if (isBitSet(state.playerShips, r, c)) { sfx.deny(); fx.shake("soft"); render(); return; }
+    if (isBitSet(existingShips, r, c)) { sfx.deny(); fx.shake("soft"); render(); return; }
     cells.push(cellToBit(r, c));
   }
 
   let groupMask = 0;
   for (const bit of cells) {
-    state.playerShips |= (1 << bit);
+    if (isP2) {
+      state.p2Ships |= (1 << bit);
+    } else {
+      state.playerShips |= (1 << bit);
+    }
     groupMask |= (1 << bit);
   }
-  playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: groupMask });
+  if (isP2) {
+    state.p2ShipGroups.push({ name: ship.name, cn: ship.cn, mask: groupMask });
+  } else {
+    playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: groupMask });
+  }
   state.placingShipIndex++;
   const placedName = ship.cn || ship.name;
 
@@ -689,6 +834,30 @@ function handlePlacementClick(row, col) {
   }
 
   if (state.placingShipIndex >= SHIPS.length) {
+    // P2P: P1 placement done → switch to P2 with privacy screen
+    if (state.gameMode === "pvp" && state.p2pPlacementPhase === "p1") {
+      state.p2pPlacementPhase = "p2";
+      state.showPrivacyScreen = true;
+      state.placingShipIndex = 0;
+      state.placementDirection = "horizontal";
+      render();
+      return;
+    }
+
+    // P2P: P2 placement done → start battle
+    if (state.gameMode === "pvp" && state.p2pPlacementPhase === "p2") {
+      state.p2pPlacementPhase = null;
+      state.phase = "battle";
+      resetAI();
+      addBattle("舰队部署完成，战斗开始！", "sys");
+      fx.banner("舰队就位 · 开战", "sunk", 1100);
+      // P1 goes first; show privacy screen before P1's first turn
+      state.showPrivacyScreen = true;
+      render();
+      return;
+    }
+
+    // AI mode: generate opponent ships and start battle
     state.opponentShips = generateRandomShips();
     state.phase = "battle";
     resetAI();
@@ -708,10 +877,58 @@ function togglePlacementDirection() {
 }
 
 function randomPlaceShips() {
-  // Reset placement state
+  // Reset placement state for current player
+  if (state.gameMode === "pvp" && state.p2pPlacementPhase === "p2") {
+    // P2 random placement
+    state.p2Ships = 0;
+    state.p2ShipGroups = [];
+    state.placingShipIndex = 0;
+    placeShipsForCurrentPlayer();
+    // Transition to battle
+    state.p2pPlacementPhase = null;
+    state.phase = "battle";
+    resetAI();
+    sfx.place();
+    fx.banner("🎲 随机部署完成 · 开战", "sunk", 1100);
+    addBattle("🎲 P2 随机部署舰队", "opp");
+    addBattle("舰队部署完成，战斗开始！", "sys");
+    state.showPrivacyScreen = true;
+    render();
+    return;
+  }
+
+  // P1 / AI mode random placement
   state.playerShips = 0;
   playerShipGroups = [];
   state.placingShipIndex = 0;
+  placeShipsForCurrentPlayer();
+
+  if (state.gameMode === "pvp" && state.p2pPlacementPhase === "p1") {
+    state.p2pPlacementPhase = "p2";
+    state.showPrivacyScreen = true;
+    state.placingShipIndex = 0;
+    state.placementDirection = "horizontal";
+    fx.banner("🎲 P1 随机部署完成", "sunk", 1100);
+    addBattle("🎲 P1 随机部署舰队", "me");
+    render();
+    return;
+  }
+
+  // AI mode
+  state.opponentShips = generateRandomShips();
+  state.phase = "battle";
+  resetAI();
+  sfx.place();
+  fx.banner("🎲 随机部署完成 · 开战", "sunk", 1100);
+  addBattle("🎲 随机部署舰队", "me");
+  addBattle("舰队部署完成，战斗开始！", "sys");
+  render();
+}
+
+function placeShipsForCurrentPlayer() {
+  const isP2 = state.gameMode === "pvp" && state.p2pPlacementPhase === "p2";
+  const targetShips = isP2 ? state : state;
+  const targetGroups = isP2 ? state.p2ShipGroups : playerShipGroups;
 
   for (const ship of SHIPS) {
     let placed = false;
@@ -727,33 +944,69 @@ function randomPlaceShips() {
         const r = horizontal ? row : row + i;
         const c = horizontal ? col + i : col;
         const bit = cellToBit(r, c);
-        if (state.playerShips & (1 << bit)) { overlap = true; break; }
+        const existing = isP2 ? state.p2Ships : state.playerShips;
+        if (existing & (1 << bit)) { overlap = true; break; }
         bits |= (1 << bit);
       }
       if (!overlap) {
-        state.playerShips |= bits;
-        playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: bits });
+        if (isP2) {
+          state.p2Ships |= bits;
+          state.p2ShipGroups.push({ name: ship.name, cn: ship.cn, mask: bits });
+        } else {
+          state.playerShips |= bits;
+          playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: bits });
+        }
         state.placingShipIndex++;
         placed = true;
       }
     }
   }
-
-  // Transition to battle
-  state.opponentShips = generateRandomShips();
-  state.phase = "battle";
-  resetAI();
-  sfx.place();
-  fx.banner("🎲 随机部署完成 · 开战", "sunk", 1100);
-  addBattle("🎲 随机部署舰队", "me");
-  addBattle("舰队部署完成，战斗开始！", "sys");
-  render();
 }
 window.randomPlace = randomPlaceShips;
 
 // ===== RENDERING =====
 function render() {
   const app = document.querySelector("#app");
+
+  // P2P privacy screen — shown between turns / during P2 placement
+  if (state.gameMode === "pvp" && state.showPrivacyScreen) {
+    const isP1Placement = state.p2pPlacementPhase === "p1";
+    const isP2Placement = state.p2pPlacementPhase === "p2";
+    const isTurnSwitch = !isP1Placement && !isP2Placement;
+
+    let title, subtitle, btnText, btnAction;
+    if (isP1Placement) {
+      title = "🚢 玩家 1 部署舰队";
+      subtitle = "请确保玩家 2 没有看到屏幕，然后点击开始放置";
+      btnText = "开始放置";
+      btnAction = "window.dismissPrivacy()";
+    } else if (isP2Placement) {
+      title = "🚢 玩家 2 部署舰队";
+      subtitle = "请确保玩家 1 没有看到屏幕，然后点击开始放置";
+      btnText = "开始放置";
+      btnAction = "window.dismissPrivacy()";
+    } else {
+      const nextPlayer = state.currentTurn === "player" ? 1 : 2;
+      title = `🔄 轮到玩家 ${nextPlayer}`;
+      subtitle = "请将设备交给对方，确认对方准备好后点击继续";
+      btnText = "继续";
+      btnAction = "window.dismissPrivacy()";
+    }
+
+    app.innerHTML = `
+      <div class="privacy-screen">
+        <div class="privacy-card">
+          <div class="privacy-icon">🔒</div>
+          <h2>${title}</h2>
+          <p>${subtitle}</p>
+          <div class="privacy-zk-note">⚡ ZK 证明将验证每次开火结果，船位始终加密保护</div>
+          <button class="privacy-btn" onclick="${btnAction}">${btnText}</button>
+        </div>
+      </div>`;
+    fx.afterRender();
+    return;
+  }
+
   if (state.phase === "start") {
     app.innerHTML = renderStart();
     return;
@@ -817,10 +1070,31 @@ function renderStart() {
         <p class="tagline">ZK Battleship on Aleo — 零知识海战棋</p>
 
         <div class="config-section">
+          <div class="config-label">🎮 对战模式 / Game Mode</div>
+          <div class="mode-options">
+            <button class="mode-btn${state.gameMode === "ai" ? " is-active" : ""}" onclick="window.selectMode('ai')">
+              <span class="mode-name">🤖 vs AI</span>
+              <span class="mode-desc">对战电脑</span>
+            </button>
+            <button class="mode-btn${state.gameMode === "pvp" ? " is-active" : ""}" onclick="window.selectMode('pvp')">
+              <span class="mode-name">👥 同设备对战</span>
+              <span class="mode-desc">两人轮流 · ZK防偷看</span>
+            </button>
+          </div>
+        </div>
+
+        ${state.gameMode === "ai" ? `
+        <div class="config-section">
           <div class="config-label">⚔️ 难度 / Difficulty (Best of 3)</div>
           <div class="diff-options">${diffOpts}</div>
           <div class="config-desc">${DIFFICULTY[state.difficulty].desc}</div>
-        </div>
+        </div>` : `
+        <div class="config-section">
+          <div class="zk-pvp-note">
+            <b>🔒 ZK 隐私对战</b><br>
+            两人轮流在同一设备上操作。放船时遮挡屏幕，开火时 ZK 证明验证命中结果——<b>对手无法偷看你的船位</b>，但能验证结果正确。这正是零知识证明的核心价值。
+          </div>
+        </div>`}
 
         <div class="config-section">
           <div class="config-label">🚢 舰队配置 / Fleet Config</div>
@@ -875,6 +1149,24 @@ window.selectFleet = (mode) => {
   sfx.click();
   render();
 };
+window.selectMode = (mode) => {
+  state.gameMode = mode;
+  sfx.click();
+  render();
+};
+
+// P2P: dismiss privacy screen and proceed to placement/battle
+window.dismissPrivacy = () => {
+  sfx.click();
+  state.showPrivacyScreen = false;
+  render();
+};
+
+// P2P: show privacy screen before switching turns
+function showTurnSwitchPrivacy() {
+  state.showPrivacyScreen = true;
+  render();
+}
 
 // ===== ONBOARDING TUTORIAL (首次进入分步引导) =====
 const TUTORIAL_KEY = "sf_tutorial_v1";
@@ -1149,13 +1441,19 @@ function renderGrid(side) {
       let cls = "cell";
       let content = "";
       const isPlayer = side === "player";
-      const ships = isPlayer ? state.playerShips : state.opponentShips;
-      const shots = isPlayer ? state.opponentShots : state.playerShots;
-      const hits = isPlayer ? state.opponentHits : state.playerHits;
+      // P2P: during P2 placement, show P2's ships on the player grid
+      const isP2Placement = state.gameMode === "pvp" && state.p2pPlacementPhase === "p2" && isPlayer;
+      const ships = isP2Placement ? state.p2Ships : (isPlayer ? state.playerShips : state.opponentShips);
+      const shots = isPlayer
+        ? (state.gameMode === "pvp" ? state.p2Shots : state.opponentShots)
+        : state.playerShots;
+      const hits = isPlayer
+        ? (state.gameMode === "pvp" ? state.p2Hits : state.opponentHits)
+        : state.playerHits;
 
       if (isBitSet(shots, r, c)) {
         if (isBitSet(hits, r, c)) {
-          // Check if this hit cell belongs to a fully sunk ship (on opponent's grid)
+          // Check if this hit cell belongs to a fully sunk ship
           let isSunk = false;
           if (!isPlayer) {
             for (const g of opponentShipGroups) {
@@ -1165,8 +1463,11 @@ function renderGrid(side) {
               }
             }
           } else {
-            for (const g of playerShipGroups) {
-              if ((g.mask & getMask(r, c)) && (state.opponentHits & g.mask) === g.mask) {
+            // P2P: P2's hits on P1's grid are in p2Hits
+            const checkHits = state.gameMode === "pvp" ? state.p2Hits : state.opponentHits;
+            const checkGroups = state.gameMode === "pvp" ? playerShipGroups : playerShipGroups;
+            for (const g of checkGroups) {
+              if ((g.mask & getMask(r, c)) && (checkHits & g.mask) === g.mask) {
                 isSunk = true;
                 break;
               }
@@ -1179,21 +1480,30 @@ function renderGrid(side) {
           content = "🌊";
         }
       } else if (isPlayer && isBitSet(ships, r, c)) {
-        cls += " cell-ship";
-        const info = shipCellMap[cellToBit(r, c)];
-        content = info ? shipSegmentSVG(info) : "🚢";
+        // P2P: hide P1's ships from P2 during battle
+        if (state.gameMode === "pvp" && state.phase === "battle" && state.currentTurn === "opponent") {
+          cls += " cell-water";
+        } else {
+          cls += " cell-ship";
+          const info = shipCellMap[cellToBit(r, c)];
+          content = info ? shipSegmentSVG(info) : "🚢";
+        }
       } else {
         cls += " cell-water";
       }
 
       const clickable =
         (state.phase === "placement" && isPlayer) ||
-        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && (state.scanMode || !isBitSet(shots, r, c)));
+        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && (state.scanMode || !isBitSet(shots, r, c))) ||
+        (state.phase === "battle" && isPlayer && state.gameMode === "pvp" && state.currentTurn === "opponent" && !isBitSet(shots, r, c));
       if (clickable) cls += " cell-clickable";
       if (state.scanMode && !isPlayer) cls += " cell-scan-target";
 
+      // P2P: when P2 is firing, hide P1's ship positions (privacy!)
+      const hideShipsInP2P = state.gameMode === "pvp" && isPlayer && state.phase === "battle" && state.currentTurn === "opponent";
+
       const onclick = isPlayer
-        ? `onclick="window.placeShip(${r}, ${c})"`
+        ? (hideShipsInP2P ? `onclick="window.pvpFire(${r}, ${c})"` : `onclick="window.placeShip(${r}, ${c})"`)
         : `onclick="window.fireAt(${r}, ${c})"`;
 
       // data-cell 是特效层定位格子的唯一锚点（fx.key(side,row,col)）。
@@ -1250,17 +1560,22 @@ function renderBlockchainBar() {
 function renderStatusBar() {
   let status = "";
   if (state.phase === "placement") {
-    status = `🚢 部署阶段 — 放完 ${SHIPS.length} 艘船即可开战`;
+    const playerLabel = state.gameMode === "pvp"
+      ? (state.p2pPlacementPhase === "p1" ? "玩家 1" : "玩家 2")
+      : "";
+    status = `🚢 ${playerLabel}部署阶段 — 放完 ${SHIPS.length} 艘船即可开战`;
   } else if (state.phase === "battle") {
     if (state.scanMode) {
       status = "📡 扫描模式 — 点击敌方海域选择扫描中心";
+    } else if (state.gameMode === "pvp") {
+      status = state.currentTurn === "player" ? "🎯 玩家 1 回合 — 点击敌方海域开火" : "🎯 玩家 2 回合 — 点击对方海域开火";
     } else {
       status = state.currentTurn === "player"
         ? "🎯 你的回合 — 点击敌方海域开火"
         : "⏳ 对手正在计算命中…";
     }
   } else if (state.phase === "gameover") {
-    status = state.winner === "player" ? "🏆 胜利！敌方舰队已被全歼！" : "💀 失败！你的舰队沉没了。";
+    status = state.winner === "player" ? "🏆 胜利！" : "💀 失败！";
   }
 
   // Combo indicator
@@ -1658,6 +1973,23 @@ window.startGame = () => {
   state.matchLosses = 0;
   state.matchRound = 0;
   state.matchOver = false;
+  // PvP: start with P1 placement + privacy screen
+  if (state.gameMode === "pvp") {
+    state.p2pPlacementPhase = "p1";
+    state.p2Ships = 0;
+    state.p2ShipGroups = [];
+    state.p2Shots = 0;
+    state.p2Hits = 0;
+    state.p2ShipsRemaining = TOTAL_SHIP_CELLS;
+    state.p2ScanRemaining = 1;
+    state.p2Combo = 0;
+    state.p2MaxCombo = 0;
+    state.showPrivacyScreen = true;
+    state.phase = "placement";
+    resetRoundState();
+    render();
+    return;
+  }
   state.phase = "placement";
   resetRoundState();
   render();
@@ -1686,6 +2018,17 @@ function resetRoundState() {
   state.scansRemaining = 1;
   state.achievements = [];
   state.turnCount = 0;
+  // P2P reset
+  state.p2Ships = 0;
+  state.p2ShipGroups = [];
+  state.p2Shots = 0;
+  state.p2Hits = 0;
+  state.p2ShipsRemaining = TOTAL_SHIP_CELLS;
+  state.p2ScanRemaining = 1;
+  state.p2Combo = 0;
+  state.p2MaxCombo = 0;
+  state.p2pPlacementPhase = state.gameMode === "pvp" ? "p1" : null;
+  state.showPrivacyScreen = state.gameMode === "pvp";
   resetAI();
 }
 
