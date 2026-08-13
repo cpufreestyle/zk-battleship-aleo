@@ -9,12 +9,32 @@ import { syncState } from "./state-mcp.js";
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
-const SHIPS = [
-  { size: 3, name: "Destroyer", cn: "驱逐舰" },
-  { size: 2, name: "Frigate", cn: "护卫舰" },
-  { size: 2, name: "Submarine", cn: "潜艇" },
-];
-const TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
+
+// Fleet configurations: standard (3 ships) and extended (4 ships)
+const FLEET_CONFIGS = {
+  standard: [
+    { size: 3, name: "Destroyer", cn: "驱逐舰" },
+    { size: 2, name: "Frigate", cn: "护卫舰" },
+    { size: 2, name: "Submarine", cn: "潜艇" },
+  ],
+  extended: [
+    { size: 3, name: "Destroyer", cn: "驱逐舰" },
+    { size: 3, name: "Cruiser", cn: "巡洋舰" },
+    { size: 2, name: "Frigate", cn: "护卫舰" },
+    { size: 2, name: "Submarine", cn: "潜艇" },
+  ],
+};
+
+// Active fleet config (mutable — set at game start)
+let SHIPS = FLEET_CONFIGS.standard;
+let TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
+
+// AI difficulty presets
+const DIFFICULTY = {
+  easy:   { huntRandom: 0.7, targetSmart: false, label: "简单", icon: "🟢", desc: "随机射击 — 适合新手" },
+  normal: { huntRandom: 0.3, targetSmart: true,  label: "普通", icon: "🟡", desc: "命中后追踪 — 平衡挑战" },
+  hard:   { huntRandom: 0.0, targetSmart: true,  label: "困难", icon: "🔴", desc: "智能追踪 + 奇偶策略 — 高手挑战" },
+};
 
 // ===== 手感节奏参数（毫秒）=====
 // ZK 走本地降级时 await 几乎瞬间返回，结果会「啪」地直接跳出来，非常突兀。
@@ -64,6 +84,17 @@ function sunkShipBy(groups, hitsBitstring, mask) {
 // ===== GAME STATE =====
 const state = {
   phase: "start",
+  // Match system: best-of-3
+  matchWins: 0,
+  matchLosses: 0,
+  matchRound: 0,
+  matchOver: false,
+  // Difficulty & fleet config
+  difficulty: "normal",
+  fleetMode: "standard",
+  // Turn tracking for efficiency score
+  turnCount: 0,
+  // Board state
   playerShips: 0,
   playerShots: 0,
   playerHits: 0,
@@ -372,12 +403,25 @@ function resetAI() {
 
 function chooseOpponentTarget() {
   const shot = state.opponentShots;
-  if (ai.mode === "target" && ai.targets.length > 0) {
+  const diff = DIFFICULTY[state.difficulty] || DIFFICULTY.normal;
+
+  // Smart targeting after hit (Normal + Hard)
+  if (diff.targetSmart && ai.mode === "target" && ai.targets.length > 0) {
     while (ai.targets.length > 0) {
       const bit = ai.targets.pop();
       if (!(shot & (1 << bit))) return bit;
     }
   }
+
+  // Easy: mostly random
+  if (Math.random() < diff.huntRandom) {
+    const avail = [];
+    for (let i = 0; i < TOTAL_CELLS; i++) if (!(shot & (1 << i))) avail.push(i);
+    if (avail.length === 0) return -1;
+    return avail[Math.floor(Math.random() * avail.length)];
+  }
+
+  // Parity hunting (Normal + Hard)
   const parity = [];
   const rest = [];
   for (let i = 0; i < TOTAL_CELLS; i++) {
@@ -411,6 +455,7 @@ async function playerFire(row, col) {
   // 因为 renderGrid 由 shots/hits 推导外观，此刻 hits 还未知，
   // 提前渲染会先把格子画成「未中 🌊」再改成命中，穿帮。
   state.playerShots |= mask;
+  state.turnCount++;
 
   // 手感第 1 拍：扣扳机 —— 音效 + 锁定环，先给确认反馈
   sfx.fire();
@@ -756,6 +801,10 @@ function render() {
 }
 
 function renderStart() {
+  const diffOpts = Object.entries(DIFFICULTY).map(([key, d]) =>
+    `<button class="diff-btn${state.difficulty === key ? " is-active" : ""}" onclick="window.selectDifficulty('${key}')">${d.icon} ${d.label}</button>`
+  ).join("");
+
   return `
     <div class="start-screen">
       <div class="start-card">
@@ -766,27 +815,48 @@ function renderStart() {
         </div>
         <h1 class="start-title">隐海战舰 <span class="subtitle">SHADOW FLEET</span></h1>
         <p class="tagline">ZK Battleship on Aleo — 零知识海战棋</p>
+
+        <div class="config-section">
+          <div class="config-label">⚔️ 难度 / Difficulty (Best of 3)</div>
+          <div class="diff-options">${diffOpts}</div>
+          <div class="config-desc">${DIFFICULTY[state.difficulty].desc}</div>
+        </div>
+
+        <div class="config-section">
+          <div class="config-label">🚢 舰队配置 / Fleet Config</div>
+          <div class="fleet-options">
+            <button class="fleet-btn${state.fleetMode === "standard" ? " is-active" : ""}" onclick="window.selectFleet('standard')">
+              <span class="fleet-name">标准舰队</span>
+              <span class="fleet-detail">3 艘 · ${FLEET_CONFIGS.standard.reduce((s,sh)=>s+sh.size,0)} 格</span>
+            </button>
+            <button class="fleet-btn${state.fleetMode === "extended" ? " is-active" : ""}" onclick="window.selectFleet('extended')">
+              <span class="fleet-name">扩展舰队</span>
+              <span class="fleet-detail">4 艘 · ${FLEET_CONFIGS.extended.reduce((s,sh)=>s+sh.size,0)} 格</span>
+            </button>
+          </div>
+        </div>
+
         <div class="how-to">
           <div class="how-step">
             <span class="step-num">1</span>
-            <div><b>部署舰队</b><br>在 5×5 棋盘上点格子放 3 艘船（驱逐舰 3 格 / 护卫舰 2 格 / 潜艇 2 格），可用 ↻ 旋转方向。</div>
+            <div><b>部署舰队</b><br>在 5×5 棋盘上点格子放船，可用 ↻ 旋转或 🎲 随机放置。</div>
           </div>
           <div class="how-step">
             <span class="step-num">2</span>
-            <div><b>开火对决</b><br>点敌方海域开火，💥 命中 / 🌊 未中。每发都由零知识证明验证，船位绝不泄露。</div>
+            <div><b>开火对决</b><br>点敌方海域开火，💥 命中 / 🌊 未中。命中后可连击，未命中才轮到对手。每发由 ZK 证明验证。</div>
           </div>
           <div class="how-step">
             <span class="step-num">3</span>
-            <div><b>击沉获胜</b><br>打光对方 7 个船格即获胜，对手也会随机还击。</div>
+            <div><b>三局两胜</b><br>先赢 2 局者获得整场胜利。📡 雷达扫描 + 🔥 连击系统增加策略深度。</div>
           </div>
         </div>
         <div class="zk-tech-spec">
           <div class="zk-tech-item"><span class="zk-tech-icon">🔐</span><div><b>Private Input</b><br>船位 bitstring 作为 ZK 程序私有输入，永不泄露</div></div>
           <div class="zk-tech-item"><span class="zk-tech-icon">✓</span><div><b>ZK Proof</b><br>Aleo snarkVM 在浏览器中生成密码学证明</div></div>
-          <div class="zk-tech-item"><span class="zk-tech-icon">⛓</span><div><b>On-Chain</b><br>verify_hit 已在 Aleo testnet 上链验证</div></div>
+          <div class="zk-tech-item"><span class="zk-tech-icon">⛓</span><div><b>On-Chain</b><br>3 个 ZK 函数已在 Aleo testnet 上链验证</div></div>
         </div>
         <div class="start-actions">
-          <button class="start-btn" onclick="window.startGame()">开始游戏</button>
+          <button class="start-btn" onclick="window.startGame()">开始对战</button>
           <button class="tut-entry-btn" onclick="window.openTutorial()">📖 玩法教程</button>
         </div>
         <div class="powered-by">Powered by <b>Aleo</b> · Built with <b>Leo</b> + <b>@provablehq/sdk</b></div>
@@ -794,6 +864,17 @@ function renderStart() {
     </div>
   `;
 }
+
+window.selectDifficulty = (key) => {
+  state.difficulty = key;
+  sfx.click();
+  render();
+};
+window.selectFleet = (mode) => {
+  state.fleetMode = mode;
+  sfx.click();
+  render();
+};
 
 // ===== ONBOARDING TUTORIAL (首次进入分步引导) =====
 const TUTORIAL_KEY = "sf_tutorial_v1";
@@ -1464,7 +1545,7 @@ function renderBattleFeed() {
     : '<div class="battle-empty">放船开火后，这里会实时播报战况。</div>';
   return `
     <div class="battle-feed-head">
-      <h3>⚔ 战斗实况</h3>
+      <h3>⚔ 战斗实况 ${state.matchRound > 0 || state.matchWins > 0 || state.matchLosses > 0 ? `<span class="match-score">(${state.matchWins}:${state.matchLosses})</span>` : ""}</h3>
       <span class="battle-score">敌方舰剩 ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS} · 我方舰剩 ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}</span>
     </div>
     <div class="battle-list">${list}</div>`;
@@ -1476,17 +1557,64 @@ function renderGameOver() {
     ? Math.round((s.proofsVerified / s.proofsGenerated) * 100)
     : 0;
 
+  // Efficiency rating: fewer shots = more stars
+  const efficiency = state.turnCount > 0 ? Math.round((TOTAL_SHIP_CELLS / state.turnCount) * 100) : 0;
+  const stars = efficiency >= 80 ? "⭐⭐⭐" : efficiency >= 50 ? "⭐⭐" : efficiency >= 30 ? "⭐" : "";
+  const ratingLabel = efficiency >= 80 ? "完美" : efficiency >= 50 ? "优秀" : efficiency >= 30 ? "及格" : "待提升";
+
+  // Check if match is decided (best of 3)
+  const matchDecided = state.matchWins >= 2 || state.matchLosses >= 2;
+  const matchWon = state.matchWins >= 2;
+
+  // Update match score on round end
+  if (state.winner === "player" && !state.matchOver) {
+    state.matchWins++;
+    state.matchOver = matchDecided;
+  } else if (state.winner === "opponent" && !state.matchOver) {
+    state.matchLosses++;
+    state.matchOver = matchDecided;
+  }
+
+  const matchScoreBar = `
+    <div class="go-match-bar">
+      <div class="go-match-side ${state.winner === "player" ? "is-win" : ""}">
+        <span class="go-match-label">你</span>
+        <span class="go-match-score">${state.matchWins}</span>
+      </div>
+      <div class="go-match-vs">VS (R${state.matchRound + 1})</div>
+      <div class="go-match-side ${state.winner === "opponent" ? "is-win" : ""}">
+        <span class="go-match-label">敌方</span>
+        <span class="go-match-score">${state.matchLosses}</span>
+      </div>
+    </div>`;
+
+  const matchResult = matchDecided
+    ? `<div class="go-match-result ${matchWon ? "over-win" : "over-lose"}">${matchWon ? "🏆 系列赛胜利！" : "💀 系列赛落败"}</div>`
+    : "";
+
+  const actionBtn = matchDecided
+    ? '<button class="restart-btn" onclick="window.restart()">返回主菜单</button>'
+    : `<button class="restart-btn" onclick="window.nextRound()">下一局 →</button>
+       <button class="restart-btn restart-btn--alt" onclick="window.restart()">放弃比赛</button>`;
+
   return `
     <div class="game-over-overlay">
       <div class="game-over-modal ${state.winner === "player" ? "over-win" : "over-lose"}">
         <h2>${state.winner === "player" ? "🏆 胜 利" : "💀 战 败"}</h2>
         <p>${state.winner === "player" ? "敌方舰队已被你全部击沉！" : "你的舰队全军覆没。"}</p>
+        ${matchScoreBar}
+        ${matchResult}
+        <div class="go-efficiency">
+          <span class="go-eff-stars">${stars}</span>
+          <span class="go-eff-label">效率 ${ratingLabel}</span>
+          <span class="go-eff-detail">${state.turnCount} 回合 / ${TOTAL_SHIP_CELLS} 命中</span>
+        </div>
         <div class="go-blockchain-summary">
           <div class="go-bc-title">⛓ Blockchain Summary</div>
           <div class="go-bc-stats">
-            <div class="go-bc-stat"><span class="go-bc-num">${s.proofsGenerated}</span><span class="go-bc-label">ZK Proofs Generated</span></div>
-            <div class="go-bc-stat"><span class="go-bc-num go-bc-num--green">${s.proofsVerified}</span><span class="go-bc-label">Verified on Aleo</span></div>
-            <div class="go-bc-stat"><span class="go-bc-num">${verifyRate}%</span><span class="go-bc-label">Verification Rate</span></div>
+            <div class="go-bc-stat"><span class="go-bc-num">${s.proofsGenerated}</span><span class="go-bc-label">ZK Proofs</span></div>
+            <div class="go-bc-stat"><span class="go-bc-num go-bc-num--green">${s.proofsVerified}</span><span class="go-bc-label">Verified</span></div>
+            <div class="go-bc-stat"><span class="go-bc-num">${verifyRate}%</span><span class="go-bc-label">Verify Rate</span></div>
           </div>
           <div class="go-bc-program">
             <span class="go-bc-label">Program:</span>
@@ -1509,7 +1637,7 @@ function renderGameOver() {
           </div>` : ""}
           ${state.maxCombo >= 2 ? `<div class="go-combo">🔥 最高连击：x${state.maxCombo}</div>` : ""}
         </div>
-        <button class="restart-btn" onclick="window.restart()">再来一局</button>
+        <div class="go-actions">${actionBtn}</div>
       </div>
     </div>
   `;
@@ -1520,20 +1648,23 @@ window.placeShip = handlePlacementClick;
 window.fireAt = playerFire;
 window.toggleDir = togglePlacementDirection;
 window.startGame = () => {
-  // 浏览器自动播放策略：AudioContext 只能在用户手势里创建/resume。
-  // 「开始游戏」这一次点击就是全局唯一的音频解锁点。
   sfx.init();
   sfx.click();
+  // Apply fleet config
+  SHIPS = FLEET_CONFIGS[state.fleetMode];
+  TOTAL_SHIP_CELLS = SHIPS.reduce((s, ship) => s + ship.size, 0);
+  // Reset match state for a new match
+  state.matchWins = 0;
+  state.matchLosses = 0;
+  state.matchRound = 0;
+  state.matchOver = false;
   state.phase = "placement";
+  resetRoundState();
   render();
 };
-window.restart = () => {
-  sfx.click();
-  fx.clear();
-  inputLocked = false;
+function resetRoundState() {
   playerShipGroups = [];
   opponentShipGroups = [];
-  state.phase = "start";
   state.playerShips = 0;
   state.playerShots = 0;
   state.playerHits = 0;
@@ -1554,7 +1685,38 @@ window.restart = () => {
   state.scanMode = false;
   state.scansRemaining = 1;
   state.achievements = [];
+  state.turnCount = 0;
   resetAI();
+}
+
+window.restart = () => {
+  sfx.click();
+  fx.clear();
+  inputLocked = false;
+  // If match is over, go back to start screen
+  if (state.matchOver) {
+    state.phase = "start";
+    state.matchOver = false;
+    state.matchWins = 0;
+    state.matchLosses = 0;
+    state.matchRound = 0;
+    render();
+    return;
+  }
+  // Otherwise start next round
+  state.phase = "placement";
+  resetRoundState();
+  render();
+};
+
+// Start next round in the match
+window.nextRound = () => {
+  sfx.click();
+  fx.clear();
+  inputLocked = false;
+  state.matchRound++;
+  state.phase = "placement";
+  resetRoundState();
   render();
 };
 

@@ -1836,3 +1836,123 @@ body {
   z-index: 2;
   pointer-events: none;
 }
+
+/* =====================================================================
+   ↓↓↓ Difficulty + Fleet Config + Match System + Efficiency ↓↓↓
+   ===================================================================== */
+
+/* ---------- Config Sections on Start Screen ---------- */
+.config-section { margin-bottom: var(--sp-4); }
+.config-label { font-size: var(--fs-sm); font-weight: 700; color: var(--color-strong); margin-bottom: 8px; }
+.config-desc { font-size: var(--fs-xs); color: var(--color-muted); margin-top: 6px; }
+
+/* Difficulty buttons */
+.diff-options { display: flex; gap: 8px; }
+.diff-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.diff-btn:hover { border-color: var(--color-accent); background: rgba(52, 152, 219, 0.08); }
+.diff-btn.is-active {
+  border-color: var(--color-accent);
+  background: rgba(52, 152, 219, 0.15);
+  box-shadow: var(--ring-accent);
+  color: var(--color-accent);
+}
+
+/* Fleet config buttons */
+.fleet-options { display: flex; gap: 8px; }
+.fleet-btn {
+  flex: 1;
+  padding: 12px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+.fleet-btn:hover { border-color: var(--color-aleo); background: rgba(168, 85, 247, 0.06); }
+.fleet-btn.is-active {
+  border-color: var(--color-aleo);
+  background: rgba(168, 85, 247, 0.12);
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.2);
+}
+.fleet-name { display: block; font-size: var(--fs-sm); font-weight: 700; color: var(--color-strong); }
+.fleet-btn.is-active .fleet-name { color: var(--color-aleo); }
+.fleet-detail { display: block; font-size: var(--fs-xs); color: var(--color-muted); margin-top: 2px; }
+
+/* ---------- Match Score in Battle Feed ---------- */
+.match-score {
+  font-size: var(--fs-xs);
+  color: var(--color-gold);
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+/* ---------- Game Over: Match Bar ---------- */
+.go-match-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 16px 0;
+}
+.go-match-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+.go-match-side.is-win { border-color: var(--safe); box-shadow: 0 0 12px rgba(46, 204, 113, 0.2); }
+.go-match-label { font-size: var(--fs-xs); color: var(--color-muted); }
+.go-match-score { font-size: 1.6rem; font-weight: 800; color: var(--color-strong); }
+.go-match-side.is-win .go-match-score { color: var(--safe); }
+.go-match-vs { font-size: var(--fs-xs); color: var(--color-muted); letter-spacing: 1px; }
+
+.go-match-result {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  text-align: center;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  margin-bottom: 12px;
+}
+.go-match-result.over-win { color: var(--safe); background: rgba(46, 204, 113, 0.08); }
+.go-match-result.over-lose { color: var(--color-hit); background: rgba(231, 76, 60, 0.08); }
+
+/* ---------- Efficiency Rating ---------- */
+.go-efficiency {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px;
+  margin-bottom: 12px;
+  border-radius: var(--r-sm);
+  background: rgba(241, 196, 15, 0.06);
+}
+.go-eff-stars { font-size: 1.2rem; }
+.go-eff-label { font-size: var(--fs-sm); font-weight: 700; color: var(--color-gold); }
+.go-eff-detail { font-size: var(--fs-xs); color: var(--color-muted); }
+
+/* ---------- Game Over Actions ---------- */
+.go-actions { display: flex; gap: 8px; justify-content: center; }
+.restart-btn--alt {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--color-muted);
+}
+.restart-btn--alt:hover { border-color: var(--color-hit); color: var(--color-hit); box-shadow: none; }
