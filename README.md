@@ -4,7 +4,7 @@
 >
 > Built for [Aleo Hackathon](https://hackathon.xyz/events/public/e7ad6199-0078-42ee-9846-b82c385e4c0e) · GameFi & SocialFi Track
 
-**🔗 Live Demo**: https://shadowfleet.vercel.app
+**🔗 Live Demo**: https://zk-battleship-aleo-fix.vercel.app
 
 ---
 
