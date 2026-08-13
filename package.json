@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@provablehq/sdk": "^0.11.6",
-    "vite": "^6.0.0"
+    "vite": "^6.4.3"
   },
   "dependencies": {
     "@playwright/test": "^1.62.1"
