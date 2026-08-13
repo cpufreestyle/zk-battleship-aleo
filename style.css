@@ -1698,3 +1698,89 @@ body {
 .proof-engine.engine-gpu { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
 .proof-engine.engine-wasm { background: rgba(52, 152, 219, 0.15); color: var(--color-accent); }
 .proof-engine.engine-js { background: rgba(127, 140, 141, 0.15); color: var(--color-miss); }
+
+/* =====================================================================
+   ↓↓↓ Combo + ZK Radar Scan + Achievements ↓↓↓
+   ===================================================================== */
+
+/* ---------- Combo Badge ---------- */
+.combo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--color-gold);
+  background: rgba(241, 196, 15, 0.12);
+  border: 1px solid rgba(241, 196, 15, 0.4);
+  box-shadow: 0 0 12px rgba(241, 196, 15, 0.25);
+  animation: comboPulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes comboPulse {
+  from { box-shadow: 0 0 8px rgba(241, 196, 15, 0.2); }
+  to   { box-shadow: 0 0 18px rgba(241, 196, 15, 0.4); }
+}
+
+/* ---------- ZK Radar Scan Button ---------- */
+.scan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+  color: var(--color-accent);
+  background: rgba(52, 152, 219, 0.1);
+  border: 1px solid rgba(52, 152, 219, 0.35);
+}
+.scan-btn:hover { transform: translateY(-1px); box-shadow: var(--ring-accent); background: rgba(52, 152, 219, 0.18); }
+.scan-btn.is-active {
+  color: #fff;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  box-shadow: var(--ring-accent);
+  animation: scanActive 1.2s ease-in-out infinite;
+}
+@keyframes scanActive {
+  0%, 100% { box-shadow: 0 0 10px rgba(52, 152, 219, 0.4); }
+  50%      { box-shadow: 0 0 22px rgba(52, 152, 219, 0.7); }
+}
+.scan-btn--used {
+  color: var(--color-muted);
+  background: rgba(127, 140, 141, 0.08);
+  border-color: rgba(127, 140, 141, 0.25);
+  cursor: default;
+}
+
+/* ---------- Game Over Achievements ---------- */
+.go-achievements {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(241, 196, 15, 0.06);
+  border: 1px solid rgba(241, 196, 15, 0.15);
+}
+.go-ach-title { font-size: var(--fs-xs); font-weight: 700; color: var(--color-gold); margin-bottom: 6px; }
+.go-ach-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.go-ach-item {
+  font-size: var(--fs-xs);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(241, 196, 15, 0.1);
+  border: 1px solid rgba(241, 196, 15, 0.25);
+  color: var(--color-gold);
+}
+.go-combo {
+  margin-top: 8px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-gold);
+  text-align: center;
+}

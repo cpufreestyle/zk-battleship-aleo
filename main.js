@@ -87,6 +87,14 @@ const state = {
     proofsFallback: 0,
     totalProofMs: 0,
   },
+  // Combo system (classic battleship: hit = keep firing)
+  combo: 0,
+  maxCombo: 0,
+  // ZK Radar Scan (1 per game, scans 3x3 area)
+  scanMode: false,
+  scansRemaining: 1,
+  // Achievements
+  achievements: [],
   // WebGPU
   gpuEnabled: false,
   gpuMs: 0,
@@ -153,6 +161,68 @@ async function zkVerifyVictory(shipsBitstring, hitsBitstring) {
   const won = (shipsBitstring & hitsBitstring) === shipsBitstring;
   addProofLog("verify_victory", shipsBitstring, hitsBitstring, won ? "true" : "false", false, "JS", 0);
   return won;
+}
+
+// ===== ZK RADAR SCAN (3rd ZK function — verify_scan) =====
+// Scans a 3x3 area and returns how many ship cells are inside,
+// WITHOUT revealing which specific cells contain ships.
+async function zkScanArea(shipsBitstring, scanMask) {
+  if (state.zkEnabled && window.__zkExecute) {
+    try {
+      if (state.zkEnabled) showZkOverlay("generating", "verify_scan()");
+      const result = await window.__zkExecute("verify_scan", [`${shipsBitstring}u32`, `${scanMask}u32`]);
+      const val = parseInt(result[0]);
+      // Count set bits in (ships & scanMask) — tells player HOW MANY ships, not WHERE
+      let count = 0;
+      let tmp = val;
+      while (tmp) { count += tmp & 1; tmp >>= 1; }
+      addProofLog("verify_scan", shipsBitstring, scanMask, String(count), true);
+      return count;
+    } catch (e) {
+      console.warn("Aleo ZK scan failed, using JS fallback:", e.message);
+      state.zkEnabled = false;
+    }
+  }
+  const result = shipsBitstring & scanMask;
+  let count = 0;
+  let tmp = result;
+  while (tmp) { count += tmp & 1; tmp >>= 1; }
+  addProofLog("verify_scan", shipsBitstring, scanMask, String(count), false);
+  return count;
+}
+
+function build3x3Mask(centerRow, centerCol) {
+  let mask = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const r = centerRow + dr;
+      const c = centerCol + dc;
+      if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+        mask |= (1 << cellToBit(r, c));
+      }
+    }
+  }
+  return mask;
+}
+
+// ===== ACHIEVEMENT SYSTEM =====
+const ACHIEVEMENTS = {
+  firstBlood: { id: "firstBlood", icon: "🏅", name: "首杀 First Blood", desc: "首次命中敌舰" },
+  combo3: { id: "combo3", icon: "🔥", name: "三连击 Sniper", desc: "连续命中3次" },
+  combo5: { id: "combo5", icon: "⚡", name: "五连击 Pentakill", desc: "连续命中5次" },
+  perfect: { id: "perfect", icon: "🏆", name: "完美胜利 Perfect Victory", desc: "零损失获胜" },
+  flawless: { id: "flawless", icon: "⭐", name: "百发百中 Flawless", desc: "全命中无一偏差" },
+};
+
+function unlockAchievement(id) {
+  if (state.achievements.includes(id)) return;
+  state.achievements.push(id);
+  const ach = ACHIEVEMENTS[id];
+  if (ach) {
+    fx.banner(`${ach.icon} ${ach.name}`, "sunk", 2000);
+    addBattle(`🏆 成就解锁：${ach.name}`, "sys");
+    sfx.sunk();
+  }
 }
 
 // ===== ZK PROOF ANIMATION OVERLAY =====
@@ -324,6 +394,12 @@ function chooseOpponentTarget() {
 async function playerFire(row, col) {
   if (state.phase !== "battle" || state.currentTurn !== "player") return;
   if (inputLocked) return;
+
+  // Scan mode: clicking enemy grid triggers ZK radar scan instead of firing
+  if (state.scanMode) {
+    return playerScan(row, col);
+  }
+
   const mask = getMask(row, col);
   if (state.playerShots & mask) return;
 
@@ -355,6 +431,14 @@ async function playerFire(row, col) {
   if (isHit) {
     state.playerHits |= mask;
     state.opponentShipsRemaining--;
+    state.combo++;
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+
+    // Achievements
+    if (state.playerHits === 1) unlockAchievement("firstBlood");
+    if (state.combo >= 3) unlockAchievement("combo3");
+    if (state.combo >= 5) unlockAchievement("combo5");
+
     sunkShip = sunkShipBy(opponentShipGroups, state.playerHits, mask);
     if (sunkShip) {
       addBattle(`🔥 ${cellName} 命中——敌方${sunkShip.cn}已被击沉！`, "hit");
@@ -363,15 +447,17 @@ async function playerFire(row, col) {
       fx.shake("hard");
       fx.banner(`击沉 敌方${sunkShip.cn}`, "sunk", 1200);
     } else {
-      addBattle(`💥 ${cellName} 命中！敌方一艘船受损`, "hit");
+      addBattle(`💥 ${cellName} 命中！${state.combo > 1 ? "连击 x" + state.combo + "！" : "敌方一艘船受损"}`, "hit");
       sfx.hit(false);
       fx.explode(k, false);
       fx.shake("soft");
+      if (state.combo >= 2) fx.banner(`🔥 连击 x${state.combo}`, "sunk", 800);
     }
   } else {
     addBattle(`🌊 ${cellName} 未中。`, "miss");
     sfx.miss();
     fx.ripple(k);
+    state.combo = 0;
   }
   render();
 
@@ -380,6 +466,9 @@ async function playerFire(row, col) {
     await wait(FEEL.VICTORY_HOLD_MS); // 让最后的爆炸放完再弹结算
     state.phase = "gameover";
     state.winner = "player";
+    // Victory achievements
+    if (state.playerShipsRemaining === TOTAL_SHIP_CELLS) unlockAchievement("perfect");
+    if (state.playerShots === state.playerHits) unlockAchievement("flawless");
     sfx.victory();
     render();
     inputLocked = false;
@@ -390,6 +479,14 @@ async function playerFire(row, col) {
   await wait(sunkShip ? FEEL.RESULT_HOLD_MS + 220 : FEEL.RESULT_HOLD_MS);
   if (state.phase !== "battle") { inputLocked = false; return; }
 
+  // Combo system: hit = keep firing (don't switch turn), miss = opponent's turn
+  if (isHit) {
+    // Player keeps firing — don't switch turn, just unlock input
+    inputLocked = false;
+    render();
+    return;
+  }
+
   state.currentTurn = "opponent";
   render();
 
@@ -398,6 +495,33 @@ async function playerFire(row, col) {
   sfx.incoming();
   setTimeout(() => opponentFire(), FEEL.INCOMING_MS);
 }
+
+// ===== ZK RADAR SCAN — player selects a cell, 3x3 area is scanned =====
+async function playerScan(row, col) {
+  if (state.scansRemaining <= 0) return;
+  inputLocked = true;
+  state.scanMode = false;
+  state.scansRemaining = 0;
+
+  const scanMask = build3x3Mask(row, col);
+  sfx.scan();
+  fx.banner("📡 ZK 雷达扫描中…", "warn", 1500);
+
+  const count = await zkScanArea(state.opponentShips, scanMask);
+  addBattle(`📡 雷达扫描：3×3 区域内发现 ${count} 格战舰（位置仍加密）`, "sys");
+  fx.banner(`📡 扫描完成：${count} 格有战舰`, "sunk", 1500);
+  render();
+  inputLocked = false;
+}
+
+function activateScan() {
+  if (state.scansRemaining <= 0 || state.scanMode) return;
+  if (state.phase !== "battle" || state.currentTurn !== "player") return;
+  state.scanMode = true;
+  fx.banner("📡 扫描模式 — 点击敌方海域选择中心", "warn", 1500);
+  render();
+}
+window.activateScan = activateScan;
 
 async function opponentFire() {
   if (state.phase !== "battle") return;
@@ -974,12 +1098,28 @@ function renderStatusBar() {
   if (state.phase === "placement") {
     status = `🚢 部署阶段 — 放完 ${SHIPS.length} 艘船即可开战`;
   } else if (state.phase === "battle") {
-    status = state.currentTurn === "player"
-      ? "🎯 你的回合 — 点击敌方海域开火"
-      : "⏳ 对手正在计算命中…";
+    if (state.scanMode) {
+      status = "📡 扫描模式 — 点击敌方海域选择扫描中心";
+    } else {
+      status = state.currentTurn === "player"
+        ? "🎯 你的回合 — 点击敌方海域开火"
+        : "⏳ 对手正在计算命中…";
+    }
   } else if (state.phase === "gameover") {
     status = state.winner === "player" ? "🏆 胜利！敌方舰队已被全歼！" : "💀 失败！你的舰队沉没了。";
   }
+
+  // Combo indicator
+  const comboBadge = state.combo >= 2
+    ? `<span class="combo-badge">🔥 连击 x${state.combo}</span>`
+    : "";
+
+  // ZK Radar Scan button
+  const scanBtn = state.phase === "battle" && state.currentTurn === "player" && state.scansRemaining > 0
+    ? `<button class="scan-btn${state.scanMode ? " is-active" : ""}" onclick="window.activateScan()">📡 ZK 雷达扫描</button>`
+    : state.scansRemaining === 0 && state.phase === "battle"
+      ? '<span class="scan-btn scan-btn--used">✅ 扫描已用</span>'
+      : "";
 
   // 三态：加载中（引擎正在 Worker 里实例化 wasm）/ 已启用（真实 ZK）/ 降级（环境不支持）
   const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
@@ -998,8 +1138,9 @@ function renderStatusBar() {
     </label>`;
 
   return `
-    <div class="status-left">${status}</div>
+    <div class="status-left">${status} ${comboBadge}</div>
     <div class="status-right">
+      ${scanBtn}
       ${zkStatus}
       ${state.aleoAddress ? `<span class="addr-badge">Aleo: ${state.aleoAddress.substring(0, 12)}...</span>` : ""}
       ${speedSel}
@@ -1283,6 +1424,17 @@ function renderGameOver() {
               ? "🔒 本局所有命中判定均由 Aleo 零知识证明验证。船位作为私有输入全程加密，未曾泄露。"
               : "⚠ 本局运行在本地校验模式，未运行真·零知识证明。"}
           </div>
+          ${state.achievements.length > 0 ? `
+          <div class="go-achievements">
+            <div class="go-ach-title">🏆 本局成就</div>
+            <div class="go-ach-list">
+              ${state.achievements.map(id => {
+                const a = ACHIEVEMENTS[id];
+                return a ? `<span class="go-ach-item">${a.icon} ${a.name}</span>` : "";
+              }).join("")}
+            </div>
+          </div>` : ""}
+          ${state.maxCombo >= 2 ? `<div class="go-combo">🔥 最高连击：x${state.maxCombo}</div>` : ""}
         </div>
         <button class="restart-btn" onclick="window.restart()">再来一局</button>
       </div>
@@ -1324,6 +1476,11 @@ window.restart = () => {
   state.proofLog = [];
   state.battleLog = [];
   state.zkStats = { proofsGenerated: 0, proofsVerified: 0, proofsFallback: 0, totalProofMs: 0 };
+  state.combo = 0;
+  state.maxCombo = 0;
+  state.scanMode = false;
+  state.scansRemaining = 1;
+  state.achievements = [];
   resetAI();
   render();
 };

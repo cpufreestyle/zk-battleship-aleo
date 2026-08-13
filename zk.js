@@ -55,6 +55,12 @@ function verify_victory:
     input r1 as u32.public;
     and r0 r1 into r2;
     output r2 as u32.private;
+
+function verify_scan:
+    input r0 as u32.private;
+    input r1 as u32.public;
+    and r0 r1 into r2;
+    output r2 as u32.private;
 `;
 
 // ZK 引擎加载超时（首次要拉 ~21MB wasm，慢网需要宽限）
@@ -195,7 +201,7 @@ function setupWorker() {
                 if (zkInitResolve) zkInitResolve(d.address);
             } else if (d.type === "error" && d.originalType === "init") {
                 if (zkInitReject) zkInitReject(new Error(d.message));
-            } else if (d.type === "verify_hit_result" || d.type === "verify_victory_result") {
+            } else if (d.type === "verify_hit_result" || d.type === "verify_victory_result" || d.type === "verify_scan_result") {
                 const p = zkPending.get(d.id);
                 if (p) { zkPending.delete(d.id); p.resolve(d.result); }
             } else if (d.type === "error") {
@@ -275,7 +281,7 @@ window.__zkExecute = async function (functionName, inputs) {
     const id = ++zkReqId;
     const ships = parseInt(inputs[0], 10);
     const mask = parseInt(inputs[1], 10);
-    const type = functionName === "verify_hit" ? "verify_hit" : "verify_victory";
+    const type = functionName === "verify_hit" ? "verify_hit" : functionName === "verify_scan" ? "verify_scan" : "verify_victory";
 
     try {
         return await withTimeout(

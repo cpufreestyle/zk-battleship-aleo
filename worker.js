@@ -51,6 +51,12 @@ function verify_victory:
     input r1 as u32.public;
     and r0 r1 into r2;
     output r2 as u32.private;
+
+function verify_scan:
+    input r0 as u32.private;
+    input r1 as u32.public;
+    and r0 r1 into r2;
+    output r2 as u32.private;
 `;
 
   try {
@@ -70,6 +76,14 @@ function verify_victory:
         false,
       );
       postMessage({ type: "verify_victory_result", result: res.getOutputs() });
+    } else if (type === "verify_scan") {
+      const res = await programManager.run(
+        SHADOWFLEET_PROGRAM,
+        "verify_scan",
+        [`${ships}u32`, `${mask}u32`],
+        false,
+      );
+      postMessage({ type: "verify_scan_result", result: res.getOutputs() });
     }
   } catch (error) {
     postMessage({ type: "error", message: error && error.message, originalType: type });
