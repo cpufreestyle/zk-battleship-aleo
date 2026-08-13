@@ -561,6 +561,8 @@ async function opponentFire() {
       sfx.hit(false);
       fx.explode(k, false);
       fx.shake("soft");
+      // Opponent combo — keeps firing on hit (same rule as player)
+      fx.banner("⚠ 敌方连击！", "warn", 800);
     }
     ai.mode = "target";
     ai.targets = ai.targets.filter(b => b !== target);
@@ -592,6 +594,15 @@ async function opponentFire() {
   // 交还回合前也停一拍，让玩家看清自己挨了哪一下
   await wait(sunkShip ? FEEL.RESULT_HOLD_MS + 220 : FEEL.RESULT_HOLD_MS);
   if (state.phase !== "battle") { inputLocked = false; return; }
+
+  // Opponent combo: hit = keep firing (same rule as player), miss = player's turn
+  if (isHit) {
+    // Opponent fires again after a short delay
+    fx.banner("⚠ 敌方继续射击", "warn", FEEL.INCOMING_MS);
+    sfx.incoming();
+    setTimeout(() => opponentFire(), FEEL.INCOMING_MS);
+    return;
+  }
 
   state.currentTurn = "player";
   render();
@@ -651,6 +662,50 @@ function togglePlacementDirection() {
   render();
 }
 
+function randomPlaceShips() {
+  // Reset placement state
+  state.playerShips = 0;
+  playerShipGroups = [];
+  state.placingShipIndex = 0;
+
+  for (const ship of SHIPS) {
+    let placed = false;
+    while (!placed) {
+      const horizontal = Math.random() < 0.5;
+      const maxRow = horizontal ? GRID_SIZE : GRID_SIZE - ship.size;
+      const maxCol = horizontal ? GRID_SIZE - ship.size : GRID_SIZE;
+      const row = Math.floor(Math.random() * maxRow);
+      const col = Math.floor(Math.random() * maxCol);
+      let bits = 0;
+      let overlap = false;
+      for (let i = 0; i < ship.size; i++) {
+        const r = horizontal ? row : row + i;
+        const c = horizontal ? col + i : col;
+        const bit = cellToBit(r, c);
+        if (state.playerShips & (1 << bit)) { overlap = true; break; }
+        bits |= (1 << bit);
+      }
+      if (!overlap) {
+        state.playerShips |= bits;
+        playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: bits });
+        state.placingShipIndex++;
+        placed = true;
+      }
+    }
+  }
+
+  // Transition to battle
+  state.opponentShips = generateRandomShips();
+  state.phase = "battle";
+  resetAI();
+  sfx.place();
+  fx.banner("🎲 随机部署完成 · 开战", "sunk", 1100);
+  addBattle("🎲 随机部署舰队", "me");
+  addBattle("舰队部署完成，战斗开始！", "sys");
+  render();
+}
+window.randomPlace = randomPlaceShips;
+
 // ===== RENDERING =====
 function render() {
   const app = document.querySelector("#app");
@@ -674,7 +729,7 @@ function render() {
             }
           </p>
           ${renderGrid("player")}
-          ${state.phase === "placement" ? '<button class="dir-btn" onclick="window.toggleDir()">↻ 旋转</button>' : ""}
+          ${state.phase === "placement" ? '<div class="placement-actions"><button class="dir-btn" onclick="window.toggleDir()">↻ 旋转</button><button class="dir-btn dir-btn--alt" onclick="window.randomPlace()">🎲 随机放置</button></div>' : ""}
         </div>
         <div class="board-section">
           <h2>敌方海域 ${state.phase === "battle" ? "— 点击开火" : ""}</h2>
@@ -1019,8 +1074,25 @@ function renderGrid(side) {
 
       if (isBitSet(shots, r, c)) {
         if (isBitSet(hits, r, c)) {
-          cls += " cell-hit";
-          content = "💥";
+          // Check if this hit cell belongs to a fully sunk ship (on opponent's grid)
+          let isSunk = false;
+          if (!isPlayer) {
+            for (const g of opponentShipGroups) {
+              if ((g.mask & getMask(r, c)) && (state.playerHits & g.mask) === g.mask) {
+                isSunk = true;
+                break;
+              }
+            }
+          } else {
+            for (const g of playerShipGroups) {
+              if ((g.mask & getMask(r, c)) && (state.opponentHits & g.mask) === g.mask) {
+                isSunk = true;
+                break;
+              }
+            }
+          }
+          cls += isSunk ? " cell-sunk" : " cell-hit";
+          content = isSunk ? "☠" : "💥";
         } else {
           cls += " cell-miss";
           content = "🌊";
@@ -1035,8 +1107,9 @@ function renderGrid(side) {
 
       const clickable =
         (state.phase === "placement" && isPlayer) ||
-        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && !isBitSet(shots, r, c));
+        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && (state.scanMode || !isBitSet(shots, r, c)));
       if (clickable) cls += " cell-clickable";
+      if (state.scanMode && !isPlayer) cls += " cell-scan-target";
 
       const onclick = isPlayer
         ? `onclick="window.placeShip(${r}, ${c})"`
