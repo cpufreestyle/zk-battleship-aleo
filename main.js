@@ -669,17 +669,21 @@ function miniBoard(occupied = []) {
 function renderTutorialDemo(kind) {
   if (kind === "goal") {
     const mine = [
-      { r: 0, c: 0, cls: "mb-ship", content: "🚢" },
-      { r: 0, c: 1, cls: "mb-ship" },
-      { r: 0, c: 2, cls: "mb-ship" },
-      { r: 2, c: 3, cls: "mb-ship", content: "🚢" },
-      { r: 2, c: 4, cls: "mb-ship" },
-      { r: 4, c: 1, cls: "mb-ship", content: "🚢" },
-      { r: 4, c: 2, cls: "mb-ship" },
+      // Destroyer (3 cells, row 0, horizontal) — steel gray
+      { r: 0, c: 0, cls: "mb-ship mb-destroyer mb-bow-h" },
+      { r: 0, c: 1, cls: "mb-ship mb-destroyer mb-mid-h" },
+      { r: 0, c: 2, cls: "mb-ship mb-destroyer mb-stern-h" },
+      // Frigate (2 cells, row 2, horizontal) — blue
+      { r: 2, c: 3, cls: "mb-ship mb-frigate mb-bow-h" },
+      { r: 2, c: 4, cls: "mb-ship mb-frigate mb-stern-h" },
+      // Submarine (2 cells, row 4, horizontal) — green
+      { r: 4, c: 1, cls: "mb-ship mb-submarine mb-bow-h" },
+      { r: 4, c: 2, cls: "mb-ship mb-submarine mb-stern-h" },
     ];
     const enemy = [
-      { r: 1, c: 1, cls: "mb-ship", content: "🚢" },
-      { r: 1, c: 2, cls: "mb-ship" },
+      // Enemy ship partially hit
+      { r: 1, c: 1, cls: "mb-ship mb-destroyer mb-bow-h" },
+      { r: 1, c: 2, cls: "mb-ship mb-destroyer mb-stern-h" },
       { r: 3, c: 0, cls: "mb-hit", content: "💥" },
       { r: 3, c: 1, cls: "mb-miss", content: "🌊" },
     ];
@@ -692,9 +696,12 @@ function renderTutorialDemo(kind) {
   }
   if (kind === "place") {
     const ships = [
-      { r: 0, c: 0, cls: "mb-ship", content: "🚢" }, { r: 0, c: 1, cls: "mb-ship" }, { r: 0, c: 2, cls: "mb-ship" },
-      { r: 2, c: 3, cls: "mb-ship-d", content: "⛴" }, { r: 2, c: 4, cls: "mb-ship-d" },
-      { r: 4, c: 1, cls: "mb-ship-d", content: "⚓" }, { r: 4, c: 2, cls: "mb-ship-d" },
+      // Destroyer — placed
+      { r: 0, c: 0, cls: "mb-ship mb-destroyer mb-bow-h" }, { r: 0, c: 1, cls: "mb-ship mb-destroyer mb-mid-h" }, { r: 0, c: 2, cls: "mb-ship mb-destroyer mb-stern-h" },
+      // Frigate — being placed (highlighted)
+      { r: 2, c: 3, cls: "mb-ship mb-frigate mb-bow-h mb-placing" }, { r: 2, c: 4, cls: "mb-ship mb-frigate mb-stern-h mb-placing" },
+      // Submarine — pending (ghost)
+      { r: 4, c: 1, cls: "mb-ship mb-submarine mb-bow-h mb-ghost" }, { r: 4, c: 2, cls: "mb-ship mb-submarine mb-stern-h mb-ghost" },
     ];
     return `<div class="demo-place">${miniBoard(ships)}<div class="demo-hint">点格子放船 · 🔄 旋转方向</div></div>`;
   }
@@ -710,9 +717,9 @@ function renderTutorialDemo(kind) {
   }
   if (kind === "zk") {
     const ships = [
-      { r: 0, c: 0, cls: "mb-ship", content: "🚢" }, { r: 0, c: 1, cls: "mb-ship" }, { r: 0, c: 2, cls: "mb-ship" },
-      { r: 2, c: 3, cls: "mb-ship", content: "🚢" }, { r: 2, c: 4, cls: "mb-ship" },
-      { r: 4, c: 1, cls: "mb-ship", content: "🚢" }, { r: 4, c: 2, cls: "mb-ship" },
+      { r: 0, c: 0, cls: "mb-ship mb-destroyer mb-bow-h" }, { r: 0, c: 1, cls: "mb-ship mb-destroyer mb-mid-h" }, { r: 0, c: 2, cls: "mb-ship mb-destroyer mb-stern-h" },
+      { r: 2, c: 3, cls: "mb-ship mb-frigate mb-bow-h" }, { r: 2, c: 4, cls: "mb-ship mb-frigate mb-stern-h" },
+      { r: 4, c: 1, cls: "mb-ship mb-submarine mb-bow-h" }, { r: 4, c: 2, cls: "mb-ship mb-submarine mb-stern-h" },
     ];
     return `<div class="demo-zk">${miniBoard(ships)}<div class="demo-lock">🔒</div><div class="demo-hint">船位已加密 · 对手看不到</div></div>`;
   }

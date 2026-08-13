@@ -1209,8 +1209,53 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-size: clamp(0.8rem, 3.4vw, 1.05rem);
 }
-.mb-ship { background: var(--bg-ship); }
-.mb-ship-d { background: #244a6b; }
+
+/* Ship type colors — matching game SHIP_STYLE */
+.mb-destroyer { background: #4f5f72; }
+.mb-frigate { background: #2c6aa6; }
+.mb-submarine { background: #2f6b4c; }
+
+/* Hull segments — rounded ends, flat connecting sides (horizontal ships) */
+.mb-bow-h {
+  border-radius: 50% 6px 6px 50%; /* rounded left = bow */
+}
+.mb-stern-h {
+  border-radius: 6px 50% 50% 6px; /* rounded right = stern */
+}
+.mb-mid-h {
+  border-radius: 0; /* flat = middle segment */
+}
+
+/* Ship deck line — subtle highlight on top */
+.mb-ship { position: relative; }
+.mb-ship::after {
+  content: "";
+  position: absolute;
+  top: 15%; left: 10%; right: 10%;
+  height: 25%;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.15);
+}
+.mb-destroyer::after { background: rgba(202,214,226,0.25); }
+.mb-frigate::after { background: rgba(223,241,251,0.25); }
+.mb-submarine::after { background: rgba(205,238,222,0.2); }
+
+/* Placing state — pulsing highlight */
+.mb-placing {
+  animation: mbPlacing 1.2s ease-in-out infinite;
+}
+@keyframes mbPlacing {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(52,152,219,0.5); }
+  50% { box-shadow: 0 0 0 2px rgba(52,152,219,1); }
+}
+
+/* Ghost — pending ship, dimmed */
+.mb-ghost {
+  opacity: 0.35;
+  border: 1px dashed rgba(255,255,255,0.2);
+}
+
+.mb-ship-d { background: #244a6b; } /* kept for backward compat */
 .mb-hit { background: var(--color-hit); color: #fff; }
 .mb-miss { background: #2b4a63; }
 /* demo: goal（你 vs 敌方） */
