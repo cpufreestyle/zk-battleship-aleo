@@ -1,0 +1,13 @@
+{
+    "program": "shadowfleet.aleo",
+    "version": "0.1.0",
+    "description": "ZK Battleship on Aleo - privacy-preserving naval combat game",
+    "license": "MIT",
+    "development": {
+        "private_key": "APrivateKey1zkp2WX8zgQwCXNZsnW7nFQNA7mqFpvJeLXFpm89kqkRrpq4",
+        "address": "aleo1t2nn43rstyp42u2pywz3ru4yng7kew4xqre4fcrpujqek2musqgsuty6zp"
+    },
+    "network": {
+        "name": "testnet"
+    }
+}
