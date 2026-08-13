@@ -2,6 +2,9 @@ import "./style.css";
 import "./zk.js";
 import { sfx } from "./audio.js";
 import * as fx from "./fx.js";
+import { ZKGPU } from "./gpu.js";
+import { generateAIPanel, callTool } from "./mcp.js";
+import { syncState } from "./state-mcp.js";
 
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
@@ -84,10 +87,27 @@ const state = {
     proofsFallback: 0,
     totalProofMs: 0,
   },
+  // WebGPU
+  gpuEnabled: false,
+  gpuMs: 0,
+  cpuMs: 0,
+  // AI Panel
+  aiPanelOpen: false,
+  aiPanelData: null,
 };
 
 // ===== ZK VERIFICATION =====
 async function zkVerifyHit(shipsBitstring, mask) {
+  // 1. Try WebGPU first
+  if (state.gpuEnabled) {
+    const gpuResult = await ZKGPU.verifyHitGPU(shipsBitstring, mask);
+    if (gpuResult) {
+      state.gpuMs = gpuResult.ms;
+      addProofLog("verify_hit", shipsBitstring, mask, gpuResult.isHit ? "true" : "false", true, "WebGPU", gpuResult.ms);
+      return gpuResult.isHit;
+    }
+  }
+  // 2. Try WASM (Aleo SDK)
   if (state.zkEnabled && window.__zkExecute) {
     try {
       const result = await window.__zkExecute("verify_hit", [`${shipsBitstring}u32`, `${mask}u32`]);
@@ -102,11 +122,21 @@ async function zkVerifyHit(shipsBitstring, mask) {
     }
   }
   const hit = (shipsBitstring & mask) !== 0;
-  addProofLog("verify_hit", shipsBitstring, mask, hit ? "true" : "false", false);
+  addProofLog("verify_hit", shipsBitstring, mask, hit ? "true" : "false", false, "JS", 0);
   return hit;
 }
 
 async function zkVerifyVictory(shipsBitstring, hitsBitstring) {
+  // 1. Try WebGPU first
+  if (state.gpuEnabled) {
+    const gpuResult = await ZKGPU.verifyVictoryGPU(shipsBitstring, hitsBitstring);
+    if (gpuResult) {
+      state.gpuMs = gpuResult.ms;
+      addProofLog("verify_victory", shipsBitstring, hitsBitstring, gpuResult.isVictory ? "true" : "false", true, "WebGPU", gpuResult.ms);
+      return gpuResult.isVictory;
+    }
+  }
+  // 2. Try WASM (Aleo SDK)
   if (state.zkEnabled && window.__zkExecute) {
     try {
       const result = await window.__zkExecute("verify_victory", [`${shipsBitstring}u32`, `${hitsBitstring}u32`]);
@@ -121,7 +151,7 @@ async function zkVerifyVictory(shipsBitstring, hitsBitstring) {
     }
   }
   const won = (shipsBitstring & hitsBitstring) === shipsBitstring;
-  addProofLog("verify_victory", shipsBitstring, hitsBitstring, won ? "true" : "false", false);
+  addProofLog("verify_victory", shipsBitstring, hitsBitstring, won ? "true" : "false", false, "JS", 0);
   return won;
 }
 
@@ -181,7 +211,7 @@ function showZkOverlay(stage, info) {
 }
 
 // ===== PROOF LOG =====
-function addProofLog(func, ships, publicInput, result, zkProof) {
+function addProofLog(func, ships, publicInput, result, zkProof, engine, ms) {
   state.zkStats.proofsGenerated++;
   if (zkProof) {
     state.zkStats.proofsVerified++;
@@ -201,6 +231,8 @@ function addProofLog(func, ships, publicInput, result, zkProof) {
     result: result,
     zkProof: zkProof,
     proofHash: hash,
+    engine: engine || (zkProof ? "WASM" : "JS"),
+    ms: ms || 0,
   };
   state.proofLog.unshift(entry);
   if (state.proofLog.length > 5) state.proofLog.pop();
@@ -208,7 +240,7 @@ function addProofLog(func, ships, publicInput, result, zkProof) {
 
   // Show blockchain-style overlay
   if (zkProof) {
-    showZkOverlay("verified", { func, hash, ms: window.__zkDiag?.engineLoadMs || 0 });
+    showZkOverlay("verified", { func, hash, ms: ms || (window.__zkDiag?.engineLoadMs || 0) });
   } else {
     showZkOverlay("fallback");
   }
@@ -533,6 +565,7 @@ function render() {
       </div>
       <div class="blockchain-bar">${renderBlockchainBar()}</div>
       <div class="status-bar${state.phase === "battle" && state.currentTurn === "opponent" ? " is-opp" : ""}">${renderStatusBar()}</div>
+      ${renderAIPanel()}
       <div class="battle-feed">${renderBattleFeed()}</div>
       <div class="proof-panel">${renderProofPanel()}</div>
       ${state.phase === "gameover" ? renderGameOver() : ""}
@@ -966,6 +999,168 @@ function renderStatusBar() {
     </div>`;
 }
 
+// ===== AI PANEL (MCP-powered) =====
+function renderAIPanel() {
+  if (!state.aiPanelOpen) {
+    return `<button class="ai-toggle" onclick="window.toggleAI()"><span>🤖</span> AI 战术助手</button>`;
+  }
+
+  const ai = generateAIPanel();
+  const bf = ai.battlefield;
+  const move = ai.bestMove;
+  const proof = ai.proofInfo;
+
+  let moveHtml = "";
+  if (move) {
+    moveHtml = `
+      <div class="ai-suggestion">
+        <div class="ai-sug-head">
+          <span class="ai-sug-icon">🎯</span>
+          <span class="ai-sug-label">推荐射击</span>
+          <span class="ai-sug-cell">${move.label}</span>
+          <span class="ai-sug-score">得分 ${move.score}</span>
+        </div>
+        <div class="ai-sug-reason">${move.reason}</div>
+        <button class="ai-fire-btn" onclick="window.aiFire(${move.row}, ${move.col})">⚡ 一键执行</button>
+      </div>`;
+  }
+
+  let proofHtml = "";
+  if (proof) {
+    proofHtml = `
+      <div class="ai-proof">
+        <div class="ai-proof-head">
+          <span class="ai-proof-icon">🔐</span>
+          <span class="ai-proof-label">ZK 证明解释</span>
+          <span class="ai-proof-fn">${proof.function}()</span>
+        </div>
+        <div class="ai-proof-body">
+          <div class="ai-proof-row"><span>作用:</span> ${proof.whatItDoes}</div>
+          <div class="ai-proof-row"><span>原理:</span> ${proof.howItWorks}</div>
+          <div class="ai-proof-row"><span>隐私:</span> ${proof.privacyGuarantee}</div>
+          <div class="ai-proof-row"><span>结果:</span> <code class="ai-proof-result">${proof.result}</code></div>
+          <div class="ai-proof-row"><span>引擎:</span> ${proof.isZkProof ? "✓ ZK 证明" : "⚠ 回退"} ${proof.proofHash !== "N/A (fallback)" ? "· " + proof.proofHash.substring(0, 12) : ""}</div>
+        </div>
+      </div>`;
+  }
+
+  const gpuBadge = state.gpuEnabled
+    ? `<span class="engine-badge engine-gpu">⚡ WebGPU ${state.gpuMs > 0 ? state.gpuMs + "ms" : ""}</span>`
+    : `<span class="engine-badge engine-cpu">🔧 WASM/JS</span>`;
+
+  const zkBadge = bf.zk.enabled
+    ? `<span class="engine-badge engine-zk">✓ ZK 已启用</span>`
+    : `<span class="engine-badge engine-fallback">⚠ 本地校验</span>`;
+
+  return `
+    <div class="ai-panel">
+      <div class="ai-panel-head">
+        <h3>🤖 AI 战术助手</h3>
+        <span class="ai-engine-info">${gpuBadge} ${zkBadge}</span>
+        <button class="ai-close" onclick="window.toggleAI()">✕</button>
+      </div>
+      <div class="ai-panel-body">
+        <div class="ai-stats">
+          <div class="ai-stat"><span class="ai-stat-val">${bf.opponent.shipsRemaining}</span><span class="ai-stat-label">敌方剩余</span></div>
+          <div class="ai-stat"><span class="ai-stat-val">${bf.player.shipsRemaining}</span><span class="ai-stat-label">我方剩余</span></div>
+          <div class="ai-stat"><span class="ai-stat-val">${bf.zk.proofsGenerated}</span><span class="ai-stat-label">ZK 证明数</span></div>
+          <div class="ai-stat"><span class="ai-stat-val">${bf.zk.proofsVerified}</span><span class="ai-stat-label">已验证</span></div>
+        </div>
+        ${moveHtml}
+        ${proofHtml}
+        <div class="ai-tools">
+          <button class="ai-tool-btn" onclick="window.aiAnalyze()">📊 分析战局</button>
+          <button class="ai-tool-btn" onclick="window.aiReview()">📋 战局复盘</button>
+          <button class="ai-tool-btn" onclick="window.aiSuggest()">🎯 推荐射击</button>
+          <button class="ai-tool-btn" onclick="window.aiExplain()">🔐 解释证明</button>
+        </div>
+        <div class="ai-analysis" id="ai-analysis"></div>
+      </div>
+    </div>`;
+}
+
+window.toggleAI = () => {
+  state.aiPanelOpen = !state.aiPanelOpen;
+  if (state.aiPanelOpen) syncState(state);
+  render();
+};
+
+window.aiFire = (row, col) => {
+  state.aiPanelOpen = false;
+  if (window.fireAt) window.fireAt(row, col);
+};
+
+window.aiAnalyze = () => {
+  syncState(state);
+  const bf = callTool("get_battlefield");
+  const el = document.getElementById("ai-analysis");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="ai-result">
+      <div class="ai-result-head">📊 战局分析</div>
+      <div class="ai-result-body">
+        <div>阶段: ${bf.phase} | 回合: ${bf.turn === "player" ? "你的" : "对手"}</div>
+        <div>敌方剩余: ${bf.opponent.shipsRemaining}/${bf.opponent.totalShips} 格</div>
+        <div>我方剩余: ${bf.player.shipsRemaining}/${bf.player.totalShips} 格</div>
+        <div>ZK 证明: ${bf.zk.proofsGenerated} 总 / ${bf.zk.proofsVerified} 验证 / ${bf.zk.proofsFallback} 回退</div>
+        <div>难度: ${bf.difficulty}</div>
+      </div>
+    </div>`;
+};
+
+window.aiReview = () => {
+  syncState(state);
+  const review = callTool("battle_review");
+  const el = document.getElementById("ai-analysis");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="ai-result">
+      <div class="ai-result-head">📋 战局复盘</div>
+      <div class="ai-result-body">
+        <div>状态: ${review.status}</div>
+        <div>ZK 证明: ${review.zkProofs.total} 总 / ${review.zkProofs.verifyRate} 验证率</div>
+        <div>我方: ${review.player.shipsRemaining}/${review.player.totalShips} 格</div>
+        <div>敌方: ${review.opponent.shipsRemaining}/${review.opponent.totalShips} 格</div>
+        <div class="ai-verdict">${review.verdict}</div>
+      </div>
+    </div>`;
+};
+
+window.aiSuggest = () => {
+  syncState(state);
+  const sug = callTool("suggest_move");
+  const el = document.getElementById("ai-analysis");
+  if (!el) return;
+  if (sug.error) { el.innerHTML = `<div class="ai-result"><div class="ai-result-body">${sug.error}</div></div>`; return; }
+  const html = sug.suggestions.map((s, i) => `
+    <div class="ai-sug-item" onclick="window.aiFire(${s.row}, ${s.col})" style="cursor:pointer">
+      <span class="ai-sug-rank">${i + 1}</span>
+      <span class="ai-sug-cell">${s.label}</span>
+      <span class="ai-sug-score">${s.score}分</span>
+      <span class="ai-sug-reason-small">${s.reason}</span>
+    </div>`).join("");
+  el.innerHTML = `<div class="ai-result"><div class="ai-result-head">🎯 射击推荐 (点击执行)</div><div class="ai-result-body">${html}</div></div>`;
+};
+
+window.aiExplain = () => {
+  syncState(state);
+  const proof = callTool("explain_proof");
+  const el = document.getElementById("ai-analysis");
+  if (!el) return;
+  if (proof.error) { el.innerHTML = `<div class="ai-result"><div class="ai-result-body">${proof.error}</div></div>`; return; }
+  el.innerHTML = `
+    <div class="ai-result">
+      <div class="ai-result-head">🔐 ZK 证明解释 — ${proof.function}()</div>
+      <div class="ai-result-body">
+        <div><b>作用:</b> ${proof.whatItDoes}</div>
+        <div><b>原理:</b> ${proof.howItWorks}</div>
+        <div><b>隐私:</b> ${proof.privacyGuarantee}</div>
+        <div><b>结果:</b> <code>${proof.result}</code></div>
+        <div><b>证明:</b> ${proof.isZkProof ? "✓ 真实 ZK" : "⚠ 回退"} ${proof.proofHash}</div>
+      </div>
+    </div>`;
+};
+
 function renderProofPanel() {
   const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
   const privacyNote = zkLoading
@@ -1006,6 +1201,7 @@ function renderProofPanel() {
       <div class="proof-header">
         <span class="proof-func">${entry.function}()</span>
         <span class="proof-time">${entry.timestamp}</span>
+        <span class="proof-engine engine-${entry.engine === 'WebGPU' ? 'gpu' : entry.engine === 'WASM' ? 'wasm' : 'js'}">${entry.engine}${entry.ms > 0 ? ' · ' + entry.ms + 'ms' : ''}</span>
         <span class="proof-badge ${entry.zkProof ? "badge-real" : "badge-fallback"}">
           ${entry.zkProof ? "✓ ZK PROOF" : "⚠ FALLBACK"}
         </span>
@@ -1129,6 +1325,20 @@ window.restart = () => {
 // 静音开关挂到 <body>（不在 #app 内 → 不会被全量重渲染冲掉）。
 // 这里只建 DOM，不碰 AudioContext，符合自动播放策略。
 sfx.mountToggle();
+
+// ===== WebGPU 初始化 =====
+ZKGPU.init().then(ok => {
+  if (ok) {
+    state.gpuEnabled = true;
+    console.log("[GPU] WebGPU 已启用，ZK 运算将使用 GPU 加速");
+    render();
+  } else {
+    console.log("[GPU] WebGPU 不可用，使用 WASM/JS 回退");
+  }
+});
+
+// ===== 状态桥接到 MCP =====
+syncState(state);
 
 // 打开即开始页，无需 loading 引导。ZK 引擎在后台异步加载，
 // 就绪（或失败降级）由下方事件监听更新状态并局部刷新，不挡玩家。
