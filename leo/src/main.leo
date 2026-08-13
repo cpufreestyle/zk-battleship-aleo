@@ -30,6 +30,15 @@ program shadowfleet.aleo {
         return ships & hits;
     }
 
+    // ZK scan: returns (ships & scan_mask) — count of set bits reveals how many
+    // ships are in the scanned area, without revealing which specific cells
+    fn verify_scan(
+        ships: u32,
+        public scan_mask: u32,
+    ) -> u32 {
+        return ships & scan_mask;
+    }
+
     // === ON-CHAIN TRANSITIONS ===
 
     // Place your fleet — creates a private Board record
