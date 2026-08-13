@@ -1268,3 +1268,263 @@ body {
   .start-actions { flex-direction: column; }
   .tut-entry-btn { width: 100%; }
 }
+
+/* =====================================================================
+   ↓↓↓ Web3 / Aleo Blockchain UI ↓↓↓
+   ===================================================================== */
+
+/* ---------- ZK Proof Animation Overlay ---------- */
+.zk-overlay {
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: none;
+  pointer-events: none;
+  animation: zkOverlayIn 0.25s ease-out;
+}
+@keyframes zkOverlayIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.92); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.zk-overlay__card {
+  background: linear-gradient(135deg, rgba(10, 25, 41, 0.96), rgba(17, 34, 56, 0.96));
+  border: 1px solid var(--color-aleo);
+  border-radius: var(--r-lg);
+  padding: 18px 28px;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(168, 85, 247, 0.35), 0 12px 36px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  min-width: 280px;
+}
+.zk-overlay--verified .zk-overlay__card { border-color: var(--safe); box-shadow: 0 0 40px rgba(46, 204, 113, 0.35), 0 12px 36px rgba(0, 0, 0, 0.5); }
+.zk-overlay--fallback .zk-overlay__card { border-color: var(--warn); box-shadow: 0 0 30px rgba(241, 196, 15, 0.25), 0 12px 36px rgba(0, 0, 0, 0.5); }
+
+.zk-overlay__spinner {
+  width: 36px; height: 36px;
+  margin: 0 auto 10px;
+  border: 3px solid rgba(168, 85, 247, 0.2);
+  border-top-color: var(--color-aleo);
+  border-radius: 50%;
+  animation: zkSpin 0.7s linear infinite;
+}
+.zk-overlay__check {
+  width: 36px; height: 36px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  background: var(--safe-soft);
+  border: 2px solid var(--safe);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; font-weight: 800;
+  color: var(--safe);
+  box-shadow: 0 0 20px rgba(46, 204, 113, 0.4);
+}
+.zk-overlay__check--warn { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); box-shadow: 0 0 16px rgba(241, 196, 15, 0.3); }
+.zk-overlay__title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--color-aleo);
+}
+.zk-overlay--verified .zk-overlay__title { color: var(--safe); }
+.zk-overlay--fallback .zk-overlay__title { color: var(--warn); }
+.zk-overlay__sub {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  margin-top: 4px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.zk-overlay__hash {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.68rem;
+  color: var(--color-aleo);
+  margin-top: 8px;
+  opacity: 0.7;
+  word-break: break-all;
+}
+.zk-overlay__chain {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 10px;
+  font-size: 0.68rem;
+  color: var(--color-muted);
+  justify-content: center;
+}
+.zk-overlay__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-aleo);
+  box-shadow: 0 0 8px var(--color-aleo);
+  animation: shieldPulse 1.5s ease-in-out infinite;
+}
+.zk-overlay__dot--done { background: var(--safe); box-shadow: 0 0 8px var(--safe); }
+.zk-overlay__chain--done { color: var(--safe); }
+
+/* ---------- Blockchain Stats Bar ---------- */
+.bc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  background: linear-gradient(180deg, rgba(10, 25, 41, 0.8), rgba(17, 34, 56, 0.8));
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-radius: var(--r-md);
+  padding: 0;
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+.bc-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bc-item:last-child { border-right: none; }
+.bc-item--addr { flex: 0 1 auto; }
+.bc-icon { font-size: 0.9rem; flex-shrink: 0; }
+.bc-label { font-size: 0.62rem; color: var(--color-muted); white-space: nowrap; }
+.bc-value { font-size: 0.78rem; font-weight: 700; color: var(--color-strong); white-space: nowrap; }
+.bc-value--green { color: var(--safe); }
+.bc-value--purple { color: var(--color-aleo); }
+.bc-value--mono { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.7rem; }
+
+@media (max-width: 768px) {
+  .bc-item { padding: 6px 10px; min-width: 80px; }
+  .bc-label { display: none; }
+}
+
+/* ---------- Start Screen Web3 Badges ---------- */
+.web3-badges {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+.web3-badge {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.web3-badge--aleo {
+  color: var(--color-aleo);
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.2);
+}
+.web3-badge--zk {
+  color: var(--safe);
+  background: var(--safe-soft);
+  border: 1px solid var(--safe-line);
+  box-shadow: var(--ring-safe);
+}
+.web3-badge--testnet {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
+}
+
+/* ---------- ZK Tech Spec on Start Screen ---------- */
+.zk-tech-spec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: var(--sp-4);
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: rgba(168, 85, 247, 0.04);
+  border: 1px solid rgba(168, 85, 247, 0.15);
+}
+.zk-tech-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: var(--fs-sm);
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.zk-tech-icon {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  font-size: 0.85rem;
+}
+.zk-tech-item b { color: var(--color-strong); }
+
+/* ---------- Powered By ---------- */
+.powered-by {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--color-muted);
+  opacity: 0.7;
+}
+.powered-by b { color: var(--color-aleo); }
+
+/* ---------- Game Over Blockchain Summary ---------- */
+.go-blockchain-summary {
+  margin: 18px 0;
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: rgba(168, 85, 247, 0.06);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  text-align: left;
+}
+.go-bc-title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--color-aleo);
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+.go-bc-stats {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.go-bc-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+.go-bc-num {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--color-aleo);
+}
+.go-bc-num--green { color: var(--safe); }
+.go-bc-label { font-size: 0.6rem; color: var(--color-muted); text-align: center; }
+.go-bc-program {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--fs-xs);
+  margin-bottom: 8px;
+}
+.go-bc-program code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  color: var(--color-aleo);
+  background: rgba(168, 85, 247, 0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.go-bc-privacy {
+  font-size: var(--fs-xs);
+  color: var(--color-muted);
+  line-height: 1.5;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: rgba(46, 204, 113, 0.06);
+}
