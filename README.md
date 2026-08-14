@@ -187,7 +187,41 @@ program shadowfleet.aleo {
     fn fire(board: Board, public coordinate: u32) -> (Board, u32) { ... }
     fn check_victory(board: Board) -> (Board, u8) { ... }
 }
+---
+
+## 🧠 技术挑战与解决方案 / Engineering Challenges
+
+### 1. 跨源隔离与 WASM 共享内存
+**问题**: `@provablehq/wasm` 无条件执行 `new WebAssembly.Memory({shared:true})`，且该行在模块顶层 —— 没有 COOP/COEP 头时静态 import 直接抛错，连带整个页面白屏。
+
+**解决**: 三层降级：
 ```
+L1 能力探测：照 SDK 那行试建最小共享内存
+     ├─ 成功 → 继续
+     └─ 失败 → coi-serviceworker 合成 COOP/COEP 重载一次
+                 ├─ 成功 → L2
+                 └─ 失败 → L3 干净降级（游戏照玩，永不白屏）
+L2 动态 import SDK → Worker 内跑真 ZK 证明
+L3 JS 本地校验
+```
+> **关键认知**：Chrome 桌面版隐藏了 `SharedArrayBuffer` 全局但**仍允许** WASM 共享内存。判断"能不能跑 ZK"只能用 `new Memory({shared:true})`，不能看 `crossOriginIsolated`。
+
+### 2. ZK 计算不阻塞主线程
+**问题**: snarkVM 每次证明冻结主线程数百毫秒~数秒，网页卡死。
+
+**解决**: 所有 `verify_hit / verify_victory / verify_scan` 转发到 Web Worker（`worker.js`），通过 postMessage 收发，主线程始终可响应。worker 初始化也从 9s 宽限到 60s 以覆盖 21MB wasm 冷启动。
+
+### 3. `verify_scan` 的隐私聚合
+**问题**: 雷达扫描要告诉玩家 *有几艘船* 却不泄露 *在哪*。
+
+**解决**: ZK 程序对 `ships & scan_mask` 求值，只输出区域内 set-bits **计数**，具体位置不可反推 —— 正是零知识证明"输出聚合信息、隐藏个体信息"的核心应用。
+
+### 4. 三层降级的诚实状态机
+保证任何环境下 `?zk=off` 也能完整可玩；状态栏在 加载中/已启用/降级 三态绝不撒谎。
+
+### 5. P2P 与在线对战的隐私
+- **同设备对阵**：回合间隐私屏交接，对方棋盘遮蔽，ZK 证明验证顺序结果
+- **互联网联机**（PeerJS/WebRTC）：**不传输船位明文**，只交换 ZK 证明结果 —— 对方能验而不能读
 
 ---
 
