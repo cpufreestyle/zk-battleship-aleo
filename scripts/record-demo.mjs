@@ -93,6 +93,58 @@ if (await tutBtn.count() > 0) {
   }
 }
 
+// ===== SCENE 2.5: ZK Lab (bitwise + privacy + blockchain demos) =====
+console.log("[record] Scene 2.5: ZK Lab...");
+// Open education panel on start screen
+await page.evaluate(() => {
+  const btn = Array.from(document.querySelectorAll("button")).find(b => (b.textContent || "").includes("课堂"));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(2500);
+
+// 2.5a Bitwise demo
+const bitCard = page.locator('.edu-lab-card:has-text("位运算")');
+if (await bitCard.count() > 0) {
+  await bitCard.click();
+  await page.waitForTimeout(2500);
+  // Toggle a few bits to show interactivity
+  for (let i = 0; i < 3; i++) {
+    await page.locator('#edu-ships-bits .edu-bit').nth(i * 5).click({ force: true }).catch(() => {});
+    await page.waitForTimeout(600);
+  }
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { try { window.eduCloseLab(); } catch(e){} });
+  await page.waitForTimeout(800);
+}
+
+// 2.5b Privacy demo
+const privCard = page.locator('.edu-lab-card:has-text("隐私保护")');
+if (await privCard.count() > 0) {
+  await privCard.click();
+  await page.waitForTimeout(2000);
+  // Show my view, fire a shot, then switch to opponent view
+  await page.locator('.edu-priv-cell.is-clickable').first().click({ force: true }).catch(() => {});
+  await page.waitForTimeout(1500);
+  await page.click('#edu-view-opp').catch(() => {});
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => { try { window.eduCloseLab(); } catch(e){} });
+  await page.waitForTimeout(800);
+}
+
+// 2.5c Blockchain flow demo
+const bcCard = page.locator('.edu-lab-card:has-text("区块链验证")');
+if (await bcCard.count() > 0) {
+  await bcCard.click();
+  await page.waitForTimeout(2000);
+  await page.click('.edu-bc-run').catch(() => {});
+  await page.waitForTimeout(5000); // watch the 5-step animation
+  await page.evaluate(() => { try { window.eduCloseLab(); } catch(e){} });
+  await page.waitForTimeout(800);
+}
+// Close edu panel, back to start screen
+await page.evaluate(() => { try { window.closeEdu(); } catch(e){} });
+await page.waitForTimeout(1000);
+
 // ===== SCENE 3: Start game (hard difficulty, extended fleet) =====
 console.log("[record] Scene 3: Start game...");
 // Select hard difficulty
