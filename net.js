@@ -20,29 +20,44 @@ let _onMessage = null;
 let _onStatus = null;
 let _onConnected = null;
 
-/** PeerJS 配置 — 使用免费公共信令服务器 + TURN 中继 */
+/** PeerJS 配置 — 免费信令 + STUN打洞 + TURN中继兜底 */
 const PEER_CONFIG = {
   config: {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun2.l.google.com:19302" },
-      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "stun.cloudflare.com:3478" },
+      // Open Relay 免费 TURN —— 关键：P2P 打洞失败时走中继，否则直接超时
+      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+      { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
     ],
+    iceCandidatePoolSize: 10,
   },
   debug: 2,
 };
 
-/** 动态加载 PeerJS 库 */
+/** 动态加载 PeerJS 库 —— jsdelivr 优先（国内可达），unpkg 兜底 */
+const PEERJS_CDNS = [
+  "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
+  "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",
+];
+
 async function loadPeerJS() {
   if (window.Peer) return window.Peer;
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
-    script.onload = () => resolve(window.Peer);
-    script.onerror = () => reject(new Error("PeerJS 加载失败"));
-    document.head.appendChild(script);
-  });
+  for (const url of PEERJS_CDNS) {
+    try {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = url;
+        script.onload = resolve;
+        script.onerror = () => { script.remove(); reject(new Error("load fail")); };
+        document.head.appendChild(script);
+      });
+      if (window.Peer) return window.Peer;
+    } catch (_) { /* try next CDN */ }
+  }
+  throw new Error("PeerJS 加载失败（所有CDN均不可达）");
 }
 
 /** 生成 4 位房间号 */
@@ -69,7 +84,15 @@ async function createRoom(onStatus, onMessage, onConnected) {
 
     _peer = new Peer(_roomCode, PEER_CONFIG);
 
+    // 主机注册超时：信令服务器不可达时快速反馈
+    const hostOpenTimeout = setTimeout(() => {
+      if (!_peer || !_peer.open) {
+        onStatus("信令服务器连接超时\n• 请检查网络/代理后重试");
+      }
+    }, 10000);
+
     _peer.on("open", (id) => {
+      clearTimeout(hostOpenTimeout);
       onStatus(`房间已创建！房间号: ${_roomCode.substring(3)}\n等待对手加入…`);
     });
 
@@ -118,7 +141,15 @@ async function joinRoom(code, onStatus, onMessage, onConnected) {
     // 客机用随机 ID
     _peer = new Peer(PEER_CONFIG);
 
+    // peer 注册超时：信令服务器不可达时快速失败，而不是干等
+    const openTimeout = setTimeout(() => {
+      if (!_peer || !_peer.open) {
+        onStatus("信令服务器连接超时\n• 请检查网络/代理\n• 稍后重试");
+      }
+    }, 10000);
+
     _peer.on("open", (id) => {
+      clearTimeout(openTimeout);
       onStatus(`正在连接房间 ${code}…`);
       _conn = _peer.connect(_roomCode, { reliable: true });
 
@@ -134,12 +165,12 @@ async function joinRoom(code, onStatus, onMessage, onConnected) {
         onStatus(`连接失败: ${err.message || "房间不存在或已满"}`);
       });
 
-      // 连接超时（15秒）
-      let timeout = setTimeout(() => {
+      // 连接超时（20秒）—— 覆盖 STUN打洞+TURN协商
+      const timeout = setTimeout(() => {
         if (!_conn || !_conn.open) {
-          onStatus("连接超时，请检查房间号或网络\n• 确认主机已创建房间\n• 确认双方网络正常\n• 可能需要翻墙");
+          onStatus("连接超时，请检查房间号或网络\n• 确认主机已创建房间\n• 确认双方网络正常\n• 可能需要开启代理/VPN");
         }
-      }, 15000);
+      }, 20000);
 
       // 连接成功后清除超时
       _conn.on("open", () => clearTimeout(timeout));
