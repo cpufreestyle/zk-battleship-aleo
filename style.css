@@ -2303,3 +2303,45 @@ body {
   border-radius: 6px; color: var(--color-miss); cursor: pointer; font-size: 0.8rem;
 }
 .online-cancel:hover { color: var(--color-text); border-color: var(--color-text); }
+
+/* ---------- Career Stats Panel (SocialFi, start screen) ---------- */
+.career-panel {
+  margin-bottom: var(--sp-4);
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+.career-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.career-rank { font-size: var(--fs-md); font-weight: 800; }
+.career-elo { font-size: var(--fs-xs); color: var(--color-muted); font-family: "SF Mono", monospace; }
+.career-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+@media (max-width: 480px) { .career-grid { grid-template-columns: repeat(3, 1fr); } }
+.career-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 2px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+.career-cell b { font-size: 0.95rem; color: var(--color-strong); }
+.career-cell b.c-win { color: var(--safe); }
+.career-cell b.c-lose { color: var(--color-hit); }
+.career-cell span { font-size: 0.6rem; color: var(--color-muted); }
+.career-zk {
+  margin-top: 8px;
+  font-size: var(--fs-xs);
+  color: var(--color-aleo);
+  text-align: center;
+}

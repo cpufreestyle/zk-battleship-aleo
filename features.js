@@ -241,3 +241,40 @@ export function getStreakBonus(streak) {
   if (streak >= 3) return "🔥 三连胜！渐入佳境！";
   return "";
 }
+
+// ===== 5. 战绩统计（SocialFi — 跨局持久化） =====
+const STATS_KEY = "sf_stats_v1";
+
+/** 加载战绩 */
+export function loadStats() {
+  try {
+    const raw = localStorage.getItem(STATS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return { games: 0, wins: 0, losses: 0, shots: 0, hits: 0, bestCombo: 0, zkProofs: 0 };
+}
+
+export function saveStats(data) {
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(data)); } catch (_) {}
+}
+
+/** 记录一局结束（胜负都记），入参为该局的射击/命中/连击/ZK数据 */
+export function recordStats({ won, shots, hits, bestCombo, zkProofs }) {
+  const s = loadStats();
+  s.games++;
+  if (won) s.wins++; else s.losses++;
+  s.shots += shots || 0;
+  s.hits += hits || 0;
+  if ((bestCombo || 0) > s.bestCombo) s.bestCombo = bestCombo || 0;
+  s.zkProofs += zkProofs || 0;
+  saveStats(s);
+  return s;
+}
+
+/** 汇总视图模型（给开始页/结算页渲染用） */
+export function getStatsView() {
+  const s = loadStats();
+  const winRate = s.games ? Math.round((s.wins / s.games) * 100) : 0;
+  const hitRate = s.shots ? Math.round((s.hits / s.shots) * 100) : 0;
+  return { ...s, winRate, hitRate };
+}

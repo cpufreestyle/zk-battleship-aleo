@@ -11,6 +11,7 @@ import {
   checkSubmarineDodge, getRevealCell, checkFrigateRapidFire,
   SHIP_ABILITIES,
   getRank, getRankProgress, recordMatch, loadRankData, getStreakBonus,
+  recordStats, getStatsView,
 } from "./features.js";
 import {
   getQuizForTrigger, renderQuizPopup, renderQuizResult,
@@ -782,11 +783,46 @@ function handleVictory() {
   // Record rank
   const result = recordMatch(true, 1000 + (state.difficulty === "hard" ? 200 : state.difficulty === "easy" ? -100 : 0));
   state.lastRankResult = result;
+  // Record lifetime stats (SocialFi)
+  recordStats({
+    won: true,
+    shots: state.playerShots ? countBits(state.playerShots) : state.turnCount,
+    hits: countBits(state.playerHits),
+    bestCombo: state.maxCombo,
+    zkProofs: state.zkStats.proofsGenerated,
+  });
   sfx.victory();
   // Education triggers
   unlockEduCard("firstWin");
   if (state.zkStats.proofsGenerated >= 5) unlockEduCard("fiveProofs");
   setTimeout(() => triggerEduQuiz("victory"), 2000);
+  render();
+  inputLocked = false;
+}
+
+function countBits(n) {
+  let c = 0;
+  while (n) { c += n & 1; n >>= 1; }
+  return c;
+}
+
+function handleDefeat() {
+  state.phase = "gameover";
+  state.winner = "opponent";
+  // Record rank (only meaningful in AI mode)
+  if (state.gameMode === "ai") {
+    state.lastRankResult = recordMatch(false, 1000 + (state.difficulty === "hard" ? 200 : state.difficulty === "easy" ? -100 : 0));
+  }
+  // Record lifetime stats (SocialFi)
+  recordStats({
+    won: false,
+    shots: countBits(state.gameMode === "pvp" ? state.p2Shots : state.playerShots),
+    hits: countBits(state.gameMode === "pvp" ? state.p2Hits : state.playerHits),
+    bestCombo: state.maxCombo,
+    zkProofs: state.zkStats.proofsGenerated,
+  });
+  sfx.defeat();
+  setTimeout(() => triggerEduQuiz("defeat"), 2000);
   render();
   inputLocked = false;
 }
@@ -861,12 +897,7 @@ async function pvpFire(row, col) {
 
   if (p2Victory) {
     await wait(FEEL.VICTORY_HOLD_MS);
-    state.phase = "gameover";
-    state.winner = "opponent";
-    sfx.defeat();
-    setTimeout(() => triggerEduQuiz("defeat"), 2000);
-    render();
-    inputLocked = false;
+    handleDefeat();
     return;
   }
 
@@ -966,13 +997,7 @@ async function opponentFire() {
   const victory = await zkVerifyVictory(state.playerShips, state.opponentHits);
   if (victory) {
     await wait(FEEL.VICTORY_HOLD_MS);
-    state.phase = "gameover";
-    state.winner = "opponent";
-    sfx.defeat();
-    // Education: trigger defeat quiz
-    setTimeout(() => triggerEduQuiz("defeat"), 2000);
-    render();
-    inputLocked = false;
+    handleDefeat();
     return;
   }
 
@@ -1295,6 +1320,28 @@ function renderStart() {
         <h1 class="start-title">隐海战舰 <span class="subtitle">SHADOW FLEET</span></h1>
         <p class="tagline">ZK Battleship on Aleo — 零知识海战棋</p>
 
+        ${(() => {
+          const sv = getStatsView();
+          const rank = getRank(state.rankData.rating);
+          if (sv.games === 0) return "";
+          return `
+        <div class="career-panel">
+          <div class="career-head">
+            <span class="career-rank" style="color:${rank.color}">${rank.icon} ${rank.name}</span>
+            <span class="career-elo">ELO ${state.rankData.rating}</span>
+          </div>
+          <div class="career-grid">
+            <div class="career-cell"><b>${sv.games}</b><span>总局</span></div>
+            <div class="career-cell"><b class="c-win">${sv.wins}</b><span>胜</span></div>
+            <div class="career-cell"><b class="c-lose">${sv.losses}</b><span>负</span></div>
+            <div class="career-cell"><b>${sv.winRate}%</b><span>胜率</span></div>
+            <div class="career-cell"><b>${sv.hitRate}%</b><span>命中率</span></div>
+            <div class="career-cell"><b>🔥x${sv.bestCombo}</b><span>最高连击</span></div>
+          </div>
+          <div class="career-zk">⛓ 累计生成 ZK 证明 ${sv.zkProofs} 次</div>
+        </div>`;
+        })()}
+
         <div class="config-section">
           <div class="config-label">🎮 对战模式 / Game Mode</div>
           <div class="mode-options mode-options-3">
@@ -1583,10 +1630,7 @@ function handleOnlineFire(row, col) {
   const victory = (state.playerShips & state.p2Hits) === state.playerShips;
   if (victory) {
     setTimeout(() => {
-      state.phase = "gameover";
-      state.winner = "opponent";
-      sfx.defeat();
-      render();
+      handleDefeat();
     }, 600);
   } else if (!isHit) {
     // Miss → switch to player's turn
