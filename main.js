@@ -1913,7 +1913,6 @@ const SHIP_STYLE = {
 // 船体轮廓：按角色(船首/船尾/船身)和船型给不同造型
 function hullPath(role, type) {
   if (type === "Submarine") {
-    // 圆润的潜艇艇身（胶囊形），仅船首略带尖角
     if (role === "bow") return "M -8,46 Q -8,32 10,32 L 88,32 Q 104,32 112,42 L 122,50 L 112,58 Q 104,68 88,68 L 10,68 Q -8,68 -8,54 Z";
     return "M -8,32 L 108,32 Q 116,32 116,50 Q 116,68 108,68 L -8,68 Q -16,68 -16,50 Q -16,32 -8,32 Z";
   }
@@ -1922,10 +1921,8 @@ function hullPath(role, type) {
   return "M -8,30 L 108,30 Q 116,30 116,50 Q 116,70 108,70 L -8,70 Q -16,70 -16,50 Q -16,30 -8,30 Z";
 }
 
-// 中间格的上层建筑：每类船形态不同
 function towerDetail(type) {
   if (type === "Frigate") {
-    // 轻巧：小舰桥 + 单管小炮，整体更纤细
     return (
       '<rect x="40" y="18" width="22" height="14" rx="3" fill="#dff1fb" stroke="#23527e" stroke-width="1.2"/>' +
       '<rect x="46" y="11" width="10" height="8" rx="2" fill="#bfe3f7" stroke="#23527e" stroke-width="1"/>' +
@@ -1933,14 +1930,12 @@ function towerDetail(type) {
     );
   }
   if (type === "Submarine") {
-    // 指挥塔围壳(sail) + 潜望镜，无火炮
     return (
       '<path d="M 38,32 Q 38,8 50,8 Q 62,8 62,32 Z" fill="#4f8470" stroke="#234d39" stroke-width="1.5"/>' +
       '<rect x="48" y="0" width="4" height="9" rx="2" fill="#234d39"/>' +
       '<rect x="44" y="20" width="12" height="3" rx="1.5" fill="#2f6b4c"/>'
     );
   }
-  // Destroyer：舰桥 + 桅杆 + 双联炮塔 + 炮管
   return (
     '<rect x="33" y="12" width="34" height="20" rx="4" fill="#d3dee9" stroke="#7c8b9a" stroke-width="1.5"/>' +
     '<rect x="41" y="5" width="18" height="9" rx="2" fill="#aebccd" stroke="#7c8b9a" stroke-width="1"/>' +
@@ -1949,39 +1944,15 @@ function towerDetail(type) {
   );
 }
 
-// 单格船体片段：横向船体 + 船首尖角 + 舰桥/炮塔/潜望塔；纵向用 rotate 复用同一套坐标
 function shipSegmentSVG(info) {
   const { horiz, role, tower, idx, type } = info;
   const style = SHIP_STYLE[type] || SHIP_STYLE.Destroyer;
   const gid = "hull-" + idx + "-" + (type || "x");
   const hull = hullPath(role, type);
   const details = tower ? towerDetail(type) : "";
-  // 竖船：在 SVG 内部用 <g> 旋转，不要旋转 <svg> 元素本身，
-  // 否则 rotate() 会改变整个 SVG 在父级里的 bounding box，导致竖船偏移到相邻格。
-  // 等距 2.5D 立体船段：顶面甲板 + 前侧舷 + 底部投影，同一主轴基准连续拼接
-  const g1 = style.grad[0], g2 = style.grad[1], g3 = style.grad[2];
-  const stroke = style.stroke, deck = style.deck;
-  // 顶面（菱形甲板，向右上透视）
-  const topFace =
-    '<path d="M -44 16 L 4 -6 L 78 28 L 24 62 Z" fill="url(#' + gid + ')" stroke="' + stroke + '" stroke-width="1.6" stroke-linejoin="round"/>';
-  // 前侧舷（面向观察者的垂直立面×厚度）
-  const sideFace =
-    '<path d="M -44 50 L 4 28 L 24 62 L 24 118 L -44 118 Z" fill="' + g3 + '" opacity="0.9" stroke="' + stroke + '" stroke-width="1.4" stroke-linejoin="round"/>';
-  // 底部深色投影（立体底）
-  const baseFace =
-    '<path d="M 4 -6 L 78 40 L 78 118 L 4 118 Z" fill="' + stroke + '" opacity="0.4"/>';
-  // 船首/船尾斜切成面按 role 处理
-  const apex =
-    role === "bow"
-      ? '<path d="M 78 40 L 122 62 L 122 118 L 78 118 Z" fill="' + g2 + '" opacity="0.7"/>'
-      : role === "stern"
-        ? '<path d="M -44 16 L -60 30 L -60 0 L -44 16 Z" fill="' + g2 + '" opacity="0.6"/>'
-        : "";
-
   const body =
-    topFace + sideFace + baseFace + apex +
-    // 甲板中线刻画（增强立体感）
-    '<line x1="-44" y1="-14" x2="-44" y2="118" stroke="' + deck + '" stroke-width="3" opacity="0.8" transform="rotate(-14 -44 52)"/>' +
+    '<path d="' + hull + '" fill="url(#' + gid + ')" stroke="' + style.stroke + '" stroke-width="2" stroke-linejoin="round"/>' +
+    '<rect x="-8" y="40" width="116" height="6" rx="3" fill="' + style.deck + '" opacity="0.65"/>' +
     details;
   return (
     '<svg class="ship-svg" viewBox="-20 -16 142 132" preserveAspectRatio="xMidYMid meet">' +
