@@ -12,6 +12,11 @@ import {
   SHIP_ABILITIES,
   getRank, getRankProgress, recordMatch, loadRankData, getStreakBonus,
 } from "./features.js";
+import {
+  getQuizForTrigger, renderQuizPopup, renderQuizResult,
+  renderCardPopup, renderCardCollection, renderZKLab,
+  renderBitwiseAndDemo, checkCardUnlock, CONCEPT_CARDS,
+} from "./education.js";
 
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
@@ -164,6 +169,14 @@ const state = {
   frigateTurnCounter: 0,
   // Rank
   rankData: loadRankData(),
+  // Education
+  answeredQuizzes: [],
+  unlockedCards: [],
+  eduQuizActive: null,
+  eduCardActive: null,
+  eduLabActive: null,
+  eduPanelOpen: false,
+  hasPlayedFirstGame: false,
 };
 
 // ===== ZK VERIFICATION =====
@@ -525,7 +538,11 @@ async function playerFire(row, col) {
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
 
     // Achievements
-    if (state.playerHits === 1) unlockAchievement("firstBlood");
+    if (state.playerHits === 1) {
+      unlockAchievement("firstBlood");
+      unlockEduCard("firstHit");
+      triggerEduQuiz("firstHit");
+    }
     if (state.combo >= 3) unlockAchievement("combo3");
     if (state.combo >= 5) unlockAchievement("combo5");
 
@@ -533,6 +550,7 @@ async function playerFire(row, col) {
     if (sunkShip) {
       addBattle(`🔥 ${cellName} 命中——敌方${sunkShip.cn}已被击沉！`, "hit");
       sfx.sunk();
+      triggerEduQuiz("firstSunk");
       fx.explode(k, true);
       fx.shake("hard");
       fx.banner(`击沉 敌方${sunkShip.cn}`, "sunk", 1200);
@@ -608,6 +626,9 @@ async function playerScan(row, col) {
   const count = await zkScanArea(state.opponentShips, scanMask);
   addBattle(`📡 雷达扫描：3×3 区域内发现 ${count} 格战舰（位置仍加密）`, "sys");
   fx.banner(`📡 扫描完成：${count} 格有战舰`, "sunk", 1500);
+  // Education: unlock card + trigger quiz on first scan
+  unlockEduCard("firstScan");
+  triggerEduQuiz("firstScan");
   render();
   inputLocked = false;
 }
@@ -732,6 +753,10 @@ function handleVictory() {
   const result = recordMatch(true, 1000 + (state.difficulty === "hard" ? 200 : state.difficulty === "easy" ? -100 : 0));
   state.lastRankResult = result;
   sfx.victory();
+  // Education triggers
+  unlockEduCard("firstWin");
+  if (state.zkStats.proofsGenerated >= 5) unlockEduCard("fiveProofs");
+  setTimeout(() => triggerEduQuiz("victory"), 2000);
   render();
   inputLocked = false;
 }
@@ -809,6 +834,7 @@ async function pvpFire(row, col) {
     state.phase = "gameover";
     state.winner = "opponent";
     sfx.defeat();
+    setTimeout(() => triggerEduQuiz("defeat"), 2000);
     render();
     inputLocked = false;
     return;
@@ -912,6 +938,8 @@ async function opponentFire() {
     state.phase = "gameover";
     state.winner = "opponent";
     sfx.defeat();
+    // Education: trigger defeat quiz
+    setTimeout(() => triggerEduQuiz("defeat"), 2000);
     render();
     inputLocked = false;
     return;
@@ -1188,6 +1216,7 @@ function render() {
       <div class="blockchain-bar">${renderBlockchainBar()}</div>
       <div class="status-bar${state.phase === "battle" && state.currentTurn === "opponent" ? " is-opp" : ""}">${renderStatusBar()}</div>
       ${renderAIPanel()}
+      ${state.eduPanelOpen ? renderEduPanel() : `<button class="edu-toggle" onclick="window.toggleEdu()"><span>🎓</span> 区块链课堂</button>`}
       <div class="battle-feed">${renderBattleFeed()}</div>
       <div class="proof-panel">${renderProofPanel()}</div>
       ${state.phase === "gameover" ? renderGameOver() : ""}
@@ -1279,6 +1308,7 @@ function renderStart() {
         <div class="start-actions">
           <button class="start-btn" onclick="window.startGame()">开始对战</button>
           <button class="tut-entry-btn" onclick="window.openTutorial()">📖 玩法教程</button>
+          <button class="tut-entry-btn" onclick="window.toggleEdu()">🎓 区块链课堂</button>
         </div>
         <div class="powered-by">Powered by <b>Aleo</b> · Built with <b>Leo</b> + <b>@provablehq/sdk</b></div>
       </div>
@@ -1981,6 +2011,188 @@ window.aiBenchmark = async () => {
       </div>
     </div>`;
 };
+
+// ===== EDUCATION PANEL =====
+function renderEduPanel() {
+  const cards = renderCardCollection(state.unlockedCards);
+  const lab = renderZKLab();
+  const quizInfo = state.answeredQuizzes.length > 0
+    ? `<div class="edu-quiz-info">已答题：${state.answeredQuizzes.length}/6</div>`
+    : "";
+  return `
+    <div class="edu-panel">
+      <div class="edu-panel-head">
+        <h3>🎓 区块链课堂</h3>
+        <button class="edu-close" onclick="window.toggleEdu()">✕</button>
+      </div>
+      <div class="edu-panel-body">
+        ${quizInfo}
+        ${lab}
+        ${cards}
+      </div>
+    </div>`;
+}
+
+window.toggleEdu = () => {
+  state.eduPanelOpen = !state.eduPanelOpen;
+  render();
+};
+
+window.eduOpenLab = (labId) => {
+  state.eduLabActive = labId;
+  if (labId === "bitwise_and") {
+    showEduOverlay(renderBitwiseAndDemo());
+    initBitwiseDemo();
+  } else {
+    showEduOverlay(`<div class="edu-overlay"><div class="edu-card edu-lab-demo"><div class="edu-lab-demo-header"><h3>🔧 即将上线</h3><button class="edu-skip" onclick="window.eduCloseLab()">✕</button></div><p>这个演示正在开发中，敬请期待！</p></div></div>`);
+  }
+};
+
+window.eduCloseLab = () => {
+  state.eduLabActive = null;
+  const el = document.getElementById("edu-lab-overlay");
+  if (el) el.remove();
+};
+
+function showEduOverlay(html) {
+  let el = document.getElementById("edu-overlay-container");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "edu-overlay-container";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = html;
+}
+
+// ===== QUIZ HANDLERS =====
+window.eduSkipQuiz = () => {
+  state.eduQuizActive = null;
+  const el = document.getElementById("edu-quiz-overlay");
+  if (el) el.remove();
+};
+
+window.eduAnswerQuiz = (index) => {
+  const quiz = state.eduQuizActive;
+  if (!quiz) return;
+  const overlay = document.getElementById("edu-quiz-overlay");
+  if (overlay) {
+    overlay.innerHTML = renderQuizResult(quiz, index);
+  }
+  const correct = index === quiz.answer;
+  if (correct && !state.answeredQuizzes.includes(quiz.id)) {
+    state.answeredQuizzes.push(quiz.id);
+    // Apply reward
+    if (quiz.rewardType === "scan") state.scansRemaining++;
+    else if (quiz.rewardType === "torpedo") state.weapons.torpedo.remaining++;
+    else if (quiz.rewardType === "emp") state.weapons.emp.remaining++;
+    else if (quiz.rewardType === "elo") state.rankData.rating += 50;
+    else if (quiz.rewardType === "card") {
+      const card = checkCardUnlock("weaponUsed", state);
+      if (card) {
+        state.unlockedCards.push(card.id);
+        setTimeout(() => showEduOverlay(renderCardPopup(card)), 2000);
+      }
+    }
+    sfx.victory();
+  } else if (!correct) {
+    sfx.deny();
+  }
+};
+
+window.eduCloseQuiz = () => {
+  state.eduQuizActive = null;
+  const el = document.getElementById("edu-quiz-overlay");
+  if (el) el.remove();
+  render();
+};
+
+window.eduCloseCard = () => {
+  state.eduCardActive = null;
+  const el = document.getElementById("edu-card-overlay");
+  if (el) el.remove();
+};
+
+/** 在游戏事件中触发问答 */
+function triggerEduQuiz(triggerEvent) {
+  if (state.eduQuizActive) return; // Already showing
+  const quiz = getQuizForTrigger(triggerEvent, state.answeredQuizzes);
+  if (!quiz) return;
+  state.eduQuizActive = quiz;
+  showEduOverlay(renderQuizPopup(quiz));
+}
+
+/** 解锁概念卡片 */
+function unlockEduCard(unlockKey) {
+  const card = checkCardUnlock(unlockKey, state);
+  if (!card) return;
+  state.unlockedCards.push(card.id);
+  setTimeout(() => showEduOverlay(renderCardPopup(card)), 1500);
+  fx.banner(`🃏 概念卡片解锁：${card.name}`, "sunk", 2000);
+  sfx.sunk();
+}
+
+// ===== BITWISE AND DEMO =====
+let _bitDemoShips = 0b00100_00010_00000_01000_00100;
+let _bitDemoMask = 0;
+
+function initBitwiseDemo() {
+  updateBitwiseDemo();
+  // Attach click handlers after render
+  setTimeout(() => {
+    const shipsBits = document.getElementById("edu-ships-bits");
+    const maskBits = document.getElementById("edu-mask-bits");
+    if (shipsBits) {
+      shipsBits.querySelectorAll(".edu-bit").forEach((el, i) => {
+        el.onclick = () => {
+          _bitDemoShips ^= (1 << i);
+          updateBitwiseDemo();
+        };
+      });
+    }
+    if (maskBits) {
+      maskBits.querySelectorAll(".edu-bit").forEach((el, i) => {
+        el.onclick = () => {
+          _bitDemoMask ^= (1 << i);
+          updateBitwiseDemo();
+        };
+      });
+    }
+  }, 50);
+}
+
+function updateBitwiseDemo() {
+  const shipsEl = document.getElementById("edu-ships-bits");
+  const maskEl = document.getElementById("edu-mask-bits");
+  const resultEl = document.getElementById("edu-result-bits");
+  const conclusionEl = document.getElementById("edu-lab-conclusion");
+  if (!shipsEl || !maskEl || !resultEl) return;
+
+  const result = _bitDemoShips & _bitDemoMask;
+  const isHit = result !== 0;
+
+  let shipsHtml = "";
+  let maskHtml = "";
+  let resultHtml = "";
+
+  for (let i = 0; i < 25; i++) {
+    const s = (_bitDemoShips >> i) & 1;
+    const m = (_bitDemoMask >> i) & 1;
+    const r = (result >> i) & 1;
+    shipsHtml += `<div class="edu-bit ${s ? "is-ship" : ""}">${s}</div>`;
+    maskHtml += `<div class="edu-bit ${m ? "is-mask" : ""}">${m}</div>`;
+    resultHtml += `<div class="edu-bit ${r ? "is-hit" : ""}">${r}</div>`;
+  }
+
+  shipsEl.innerHTML = shipsHtml;
+  maskEl.innerHTML = maskHtml;
+  resultEl.innerHTML = resultHtml;
+
+  if (conclusionEl) {
+    conclusionEl.innerHTML = isHit
+      ? `<div class="edu-hit-result">💥 命中！ships & mask ≠ 0 — 该格有船</div>`
+      : `<div class="edu-miss-result">🌊 未命中 — 该格无船</div>`;
+  }
+}
 
 function renderProofPanel() {
   const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
