@@ -1437,7 +1437,9 @@ function renderStart() {
         </div>
         <div class="start-actions">
           <button class="start-btn" onclick="window.startGame()">开始对战</button>
-          <button class="tut-entry-btn" onclick="window.openTutorial()">📖 玩法教程</button>
+          <button class="tut-entry-btn tut-entry-btn--featured" onclick="window.openTutorial()">📖 玩法教程</button>
+        </div>
+        <div class="start-sub-actions">
           <button class="tut-entry-btn" onclick="window.toggleEdu()">🎓 区块链课堂</button>
         </div>
         <div class="powered-by">Powered by <b>Aleo</b> · Built with <b>Leo</b> + <b>@provablehq/sdk</b></div>

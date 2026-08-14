@@ -1137,6 +1137,43 @@ body {
 .tut-entry-btn:hover { background: rgba(52, 152, 219, 0.12); box-shadow: var(--ring-accent); transform: translateY(-2px); }
 .tut-entry-btn:active { transform: translateY(0); }
 
+/* 显眼的玩法教程按钮：金色渐变高亮 */
+.tut-entry-btn--featured {
+  background: linear-gradient(135deg, var(--color-gold), #f39c12);
+  color: #3b2d00;
+  border: none;
+  font-weight: 800;
+  font-size: var(--fs-lg);
+  box-shadow: 0 6px 20px rgba(241, 196, 15, 0.4);
+  flex: 0 0 40%;
+  animation: tutorialGlow 2s ease-in-out infinite;
+}
+.tut-entry-btn--featured:hover {
+  background: linear-gradient(135deg, #f7d53d, #f39c12);
+  box-shadow: 0 8px 26px rgba(241, 196, 15, 0.55);
+  transform: translateY(-2px);
+}
+@keyframes tutorialGlow {
+  0%, 100% { box-shadow: 0 6px 20px rgba(241, 196, 15, 0.4); }
+  50% { box-shadow: 0 6px 32px rgba(241, 196, 15, 0.7); }
+}
+
+/* 次级按钮（区块链课堂）独立一行，居中 */
+.start-sub-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.start-sub-actions .tut-entry-btn {
+  font-size: var(--fs-sm);
+  padding: 8px 20px;
+  min-height: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tut-entry-btn--featured { animation: none; }
+}
+
 /* 引导遮罩 */
 .tutorial-overlay {
   position: fixed;
@@ -1312,6 +1349,8 @@ body {
 @media (max-width: 420px) {
   .start-actions { flex-direction: column; }
   .tut-entry-btn { width: 100%; }
+  .tut-entry-btn--featured { flex: 1 0 auto; align-self: stretch; }
+  .start-sub-actions { flex-direction: column; width: 100%; }
 }
 
 /* =====================================================================
