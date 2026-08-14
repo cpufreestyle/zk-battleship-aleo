@@ -1176,7 +1176,7 @@ function randomPlaceShips() {
 
 function placeShipsForCurrentPlayer() {
   const isP2 = state.gameMode === "pvp" && state.p2pPlacementPhase === "p2";
-  const targetShips = isP2 ? state : state;
+  const targetShips = isP2 ? state.p2Ships : state.playerShips;
   const targetGroups = isP2 ? state.p2ShipGroups : playerShipGroups;
 
   for (const ship of SHIPS) {
