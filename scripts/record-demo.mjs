@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * Record a demo video of Shadow Fleet gameplay using Playwright.
- *
- * Usage:
- *   node scripts/record-demo.mjs
+ * Record a comprehensive demo video of Shadow Fleet showcasing all features:
+ * 1. Start screen with mode/difficulty/fleet selection + Web3 badges
+ * 2. Interactive tutorial
+ * 3. Ship placement (manual + random)
+ * 4. Battle with ZK proofs, combo, weapons, scan
+ * 5. Blockchain stats bar + proof panel
+ * 6. Game over with blockchain summary
  */
 
 import { chromium } from "@playwright/test";
@@ -15,7 +18,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const PORT = 4173;
 
-// Start server
 const server = spawn("node", ["scripts/serve-dist.mjs", "--port", String(PORT)], {
   cwd: projectRoot,
   stdio: "pipe",
@@ -57,62 +59,82 @@ page.on("console", (msg) => {
   }
 });
 
-// --- Navigate ---
-console.log("[record] Loading app...");
+// ===== SCENE 1: Start screen (mode selection, difficulty, fleet) =====
+console.log("[record] Scene 1: Start screen...");
 await page.goto(`http://localhost:${PORT}`, { waitUntil: "networkidle" });
 await page.waitForSelector("#app", { timeout: 10000 });
+await page.waitForTimeout(8000); // ZK engine load
+await page.waitForTimeout(4000); // Show start screen
 
-// Wait for ZK engine
-console.log("[record] Waiting for ZK engine (8s)...");
-await page.waitForTimeout(8000);
-
-// --- Show start screen ---
-console.log("[record] Start screen (3s)...");
+// Show mode options
+const modeBtns = page.locator(".mode-btn");
+console.log(`[record] Mode buttons: ${await modeBtns.count()}`);
 await page.waitForTimeout(3000);
 
-// --- Start game ---
-console.log("[record] Clicking 开始游戏...");
-await page.click("text=开始游戏");
-await page.waitForTimeout(2000);
-
-// --- Verify we're in placement phase ---
-const phase = await page.evaluate(() => document.querySelector("#app")?.innerHTML?.includes("放置") ? "placement" : "other");
-console.log(`[record] Phase after start: ${phase}`);
-
-// --- Place ships ---
-// Ships: Destroyer(3), Frigate(2), Submarine(2) = 7 cells, all horizontal
-console.log("[record] Placing ships...");
-const placements = [
-  [0, 0], [0, 1], [0, 2],  // Destroyer (3 cells)
-  [2, 0], [2, 1],            // Frigate (2 cells)
-  [4, 0], [4, 1],            // Submarine (2 cells)
-];
-
-for (const [r, c] of placements) {
-  const sel = `[data-cell="player-${r}-${c}"]`;
-  const el = page.locator(sel);
-  if (await el.count() > 0) {
-    await el.click();
-    console.log(`[record]   Placed at player-${r}-${c}`);
-    await page.waitForTimeout(700);
-  } else {
-    console.log(`[record]   WARNING: cell player-${r}-${c} not found!`);
+// ===== SCENE 2: Tutorial =====
+console.log("[record] Scene 2: Tutorial...");
+const tutBtn = page.locator("text=玩法教程");
+if (await tutBtn.count() > 0) {
+  await tutBtn.first().click();
+  await page.waitForTimeout(2500);
+  // Step through 2 tutorial steps
+  for (let i = 0; i < 2; i++) {
+    const nextBtn = page.locator(".tut-next");
+    if (await nextBtn.count() > 0) {
+      await nextBtn.first().click();
+      await page.waitForTimeout(1800);
+    }
+  }
+  // Close tutorial
+  const closeBtn = page.locator(".tut-close");
+  if (await closeBtn.count() > 0) {
+    await closeBtn.first().click();
+    await page.waitForTimeout(1000);
   }
 }
 
-// Wait for battle phase transition
-console.log("[record] Waiting for battle phase...");
+// ===== SCENE 3: Start game (hard difficulty, extended fleet) =====
+console.log("[record] Scene 3: Start game...");
+// Select hard difficulty
+const hardBtn = page.locator(".diff-btn", { hasText: "困难" });
+if (await hardBtn.count() > 0) {
+  await hardBtn.click();
+  await page.waitForTimeout(800);
+}
+// Select extended fleet
+const extBtn = page.locator(".fleet-btn", { hasText: "扩展" });
+if (await extBtn.count() > 0) {
+  await extBtn.click();
+  await page.waitForTimeout(800);
+}
+await page.waitForTimeout(2000);
+
+// Start game
+await page.click("text=开始对战");
+await page.waitForTimeout(2000);
+
+// ===== SCENE 4: Random placement (faster for demo) =====
+console.log("[record] Scene 4: Random placement...");
+const randBtn = page.locator("text=随机放置");
+if (await randBtn.count() > 0) {
+  await randBtn.first().click();
+  await page.waitForTimeout(3000);
+} else {
+  // Manual placement fallback
+  const placements = [[0,0],[0,1],[0,2],[2,0],[2,1],[4,0],[4,1],[1,3],[1,4],[3,2]];
+  for (const [r, c] of placements) {
+    const cell = page.locator(`[data-cell="player-${r}-${c}"]`);
+    if (await cell.count() > 0) {
+      await cell.click();
+      await page.waitForTimeout(600);
+    }
+  }
+  await page.waitForTimeout(2000);
+}
+
+// ===== SCENE 5: Battle with ZK proofs =====
+console.log("[record] Scene 5: Battle...");
 await page.waitForTimeout(3000);
-
-// Check phase
-const battleReady = await page.evaluate(() => {
-  const app = document.querySelector("#app");
-  return app?.innerHTML?.includes("敌方") || app?.innerHTML?.includes("Enemy") || false;
-});
-console.log(`[record] Battle phase ready: ${battleReady}`);
-
-// --- Fire at enemy ---
-console.log("[record] Firing at enemy grid...");
 
 const targets = [
   [0, 0], [0, 2], [1, 1], [2, 3], [3, 0],
@@ -124,44 +146,58 @@ const targets = [
 
 let shotsFired = 0;
 for (const [r, c] of targets) {
-  // Fixed delay between shots — inputLocked is module-scoped, can't check from page context.
-  // Full cycle: lock_on(150ms) + suspense(300ms) + result_hold(260ms) + opponent(~1200ms) ≈ 2s
-  await page.waitForTimeout(3500);
+  await page.waitForTimeout(3000);
 
-  const sel = `[data-cell="opponent-${r}-${c}"]`;
-  const el = page.locator(sel);
-  if (await el.count() === 0) {
-    console.log(`[record]   SKIP opponent-${r}-${c} (not found)`);
-    continue;
+  // Handle education quiz overlay if it appears (answer it — it's a demo feature!)
+  const quizCard = page.locator(".edu-quiz-card");
+  if (await quizCard.count() > 0 && await quizCard.first().isVisible()) {
+    console.log("[record] Education quiz appeared — answering...");
+    await page.waitForTimeout(2500); // Let viewers read the question
+    // Click the correct answer (usually option index 1) — or first option as fallback
+    const options = page.locator(".edu-option, .quiz-option, .edu-quiz-card button");
+    const optCount = await options.count();
+    if (optCount > 1) {
+      await options.nth(1).click().catch(() => {});
+    } else if (optCount === 1) {
+      await options.first().click().catch(() => {});
+    }
+    await page.waitForTimeout(2000);
+    // Dismiss explanation if shown (match known button text in page)
+    await page.evaluate(() => {
+      const candidates = ["继续", "确定", "知道了", "关闭", "完成", "存入卡片"];
+      const btns = Array.from(document.querySelectorAll("button, .edu-dismiss, .quiz-dismiss"));
+      const target = btns.find(b => {
+        const t = (b.textContent || "").trim();
+        return t && candidates.some(c => t.includes(c));
+      });
+      if (target) target.click();
+    });
+    await page.waitForTimeout(1500);
   }
 
-  // Check if cell has onclick (still fireable)
+  const el = page.locator(`[data-cell="opponent-${r}-${c}"]`);
+  if (await el.count() === 0) continue;
+
   const clickable = await el.evaluate((node) => node.hasAttribute("onclick"));
-  if (!clickable) {
-    console.log(`[record]   SKIP opponent-${r}-${c} (already fired)`);
-    continue;
-  }
+  if (!clickable) continue;
 
   await el.click();
   shotsFired++;
-  console.log(`[record]   Fired at opponent-${r}-${c} (shot ${shotsFired})`);
+  console.log(`[record] Fired at opponent-${r}-${c} (${shotsFired})`);
 
-  // Check if game ended
-  const restart = page.locator("text=再来一局");
-  if (await restart.count() > 0) {
+  if (await page.locator("text=下一局").count() > 0 || await page.locator("text=返回主菜单").count() > 0) {
     console.log(`[record] Game ended after ${shotsFired} shots!`);
     break;
   }
 }
 
-// --- Show final state ---
-console.log("[record] Final state (5s)...");
+// ===== SCENE 6: Game over screen =====
+console.log("[record] Scene 6: Game over...");
 await page.waitForTimeout(5000);
 
-// --- Close ---
+// ===== Save =====
 console.log("[record] Saving video...");
 await context.close();
 await browser.close();
 server.kill();
-
 console.log("[record] Done!");
