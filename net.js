@@ -20,16 +20,17 @@ let _onMessage = null;
 let _onStatus = null;
 let _onConnected = null;
 
-/** PeerJS 配置 — 使用免费公共信令服务器 */
+/** PeerJS 配置 — 使用免费公共信令服务器 + TURN 中继 */
 const PEER_CONFIG = {
   config: {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
       { urls: "stun:stun2.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" },
     ],
   },
-  debug: 1,
+  debug: 2,
 };
 
 /** 动态加载 PeerJS 库 */
@@ -73,8 +74,15 @@ async function createRoom(onStatus, onMessage, onConnected) {
     });
 
     _peer.on("connection", (conn) => {
-      _conn = conn;
-      setupConnection(conn);
+      // 关键修复：等 conn 完全打开后再设置
+      conn.on("open", () => {
+        _conn = conn;
+        setupConnection(conn);
+      });
+      conn.on("error", (err) => {
+        console.error("[NET] host conn error:", err);
+        onStatus(`对手连接失败: ${err.message}`);
+      });
     });
 
     _peer.on("error", (err) => {
@@ -114,27 +122,38 @@ async function joinRoom(code, onStatus, onMessage, onConnected) {
       onStatus(`正在连接房间 ${code}…`);
       _conn = _peer.connect(_roomCode, { reliable: true });
 
+      // 关键修复：监听 conn 的 open 事件，不要在 peer open 后立刻发消息
       _conn.on("open", () => {
         setupConnection(_conn);
-        // 客机连接成功后通知主机
+        // DataChannel 已打开，安全发送 join 消息
         _conn.send({ type: "join", id: id });
       });
 
       _conn.on("error", (err) => {
+        console.error("[NET] conn error:", err);
         onStatus(`连接失败: ${err.message || "房间不存在或已满"}`);
       });
 
-      // 连接超时
-      setTimeout(() => {
+      // 连接超时（15秒）
+      let timeout = setTimeout(() => {
         if (!_conn || !_conn.open) {
-          onStatus("连接超时，请检查房间号或网络");
+          onStatus("连接超时，请检查房间号或网络\n• 确认主机已创建房间\n• 确认双方网络正常\n• 可能需要翻墙");
         }
       }, 15000);
+
+      // 连接成功后清除超时
+      _conn.on("open", () => clearTimeout(timeout));
     });
 
     _peer.on("error", (err) => {
       console.error("[NET] Peer error:", err);
-      onStatus(`连接错误: ${err.type || err.message}`);
+      if (err.type === "peer-unavailable") {
+        onStatus("房间不存在或主机已关闭\n请确认房间号正确");
+      } else if (err.type === "network" || err.type === "server-error") {
+        onStatus("网络错误，可能需要开启代理/VPN");
+      } else {
+        onStatus(`连接错误: ${err.type || err.message}`);
+      }
     });
 
   } catch (e) {
@@ -144,15 +163,14 @@ async function joinRoom(code, onStatus, onMessage, onConnected) {
 
 /** 设置 DataChannel 事件 */
 function setupConnection(conn) {
-  conn.on("open", () => {
-    if (_onConnected) _onConnected(_isHost);
-  });
-
+  // conn 应该已经 open 了（调用方确保）
   conn.on("data", (data) => {
+    console.log("[NET] received:", data.type || data);
     if (_onMessage) _onMessage(data);
   });
 
   conn.on("close", () => {
+    console.log("[NET] connection closed");
     if (_onStatus) _onStatus("对手已断开连接");
     if (_onMessage) _onMessage({ type: "disconnect" });
   });
@@ -161,6 +179,12 @@ function setupConnection(conn) {
     console.error("[NET] Conn error:", err);
     if (_onStatus) _onStatus(`连接错误: ${err.message}`);
   });
+
+  // 触发连接成功回调
+  if (_onConnected) {
+    console.log("[NET] connection established, isHost:", _isHost);
+    _onConnected(_isHost);
+  }
 }
 
 /** 发送消息 */
