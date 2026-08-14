@@ -522,8 +522,10 @@ async function playerFire(row, col) {
   // 手感第 2 拍：悬念。ZK 与最短等待并行，取较慢者。
   // 真 ZK 慢 → 按真实耗时；本地降级快 → 补足 SUSPENSE_MS，节奏统一。
   if (state.zkEnabled) showZkOverlay("generating", "verify_hit()");
+  // P2P: P1 fires at P2's ships (state.p2Ships), not state.opponentShips
+  const targetShips = state.gameMode === "pvp" ? state.p2Ships : state.opponentShips;
   const [isHit] = await Promise.all([
-    zkVerifyHit(state.opponentShips, mask),
+    zkVerifyHit(targetShips, mask),
     wait(FEEL.SUSPENSE_MS),
   ]);
 
@@ -533,7 +535,9 @@ async function playerFire(row, col) {
   let sunkShip = null;
   if (isHit) {
     state.playerHits |= mask;
-    state.opponentShipsRemaining--;
+    // P2P: decrement P2's remaining; AI: decrement opponent's
+    if (state.gameMode === "pvp") state.p2ShipsRemaining--;
+    else state.opponentShipsRemaining--;
     state.combo++;
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
 
@@ -546,7 +550,9 @@ async function playerFire(row, col) {
     if (state.combo >= 3) unlockAchievement("combo3");
     if (state.combo >= 5) unlockAchievement("combo5");
 
-    sunkShip = sunkShipBy(opponentShipGroups, state.playerHits, mask);
+    // P2P: check against P2's ship groups; AI: check opponentShipGroups
+    const targetGroups = state.gameMode === "pvp" ? state.p2ShipGroups : opponentShipGroups;
+    sunkShip = sunkShipBy(targetGroups, state.playerHits, mask);
     if (sunkShip) {
       addBattle(`🔥 ${cellName} 命中——敌方${sunkShip.cn}已被击沉！`, "hit");
       sfx.sunk();
@@ -569,7 +575,8 @@ async function playerFire(row, col) {
   }
   render();
 
-  const victory = await zkVerifyVictory(state.opponentShips, state.playerHits);
+  // P2P: check victory against P2's ships; AI: check against opponentShips
+  const victory = await zkVerifyVictory(targetShips, state.playerHits);
   if (victory) {
     await wait(FEEL.VICTORY_HOLD_MS); // 让最后的爆炸放完再弹结算
     state.phase = "gameover";
