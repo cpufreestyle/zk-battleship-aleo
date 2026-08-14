@@ -2021,6 +2021,10 @@ window.aiBenchmark = async () => {
 
 // ===== EDUCATION PANEL =====
 function renderEduPanel() {
+  return renderEduPanelContent();
+}
+
+function renderEduPanelContent() {
   const cards = renderCardCollection(state.unlockedCards);
   const lab = renderZKLab();
   const quizInfo = state.answeredQuizzes.length > 0
@@ -2030,7 +2034,7 @@ function renderEduPanel() {
     <div class="edu-panel">
       <div class="edu-panel-head">
         <h3>🎓 区块链课堂</h3>
-        <button class="edu-close" onclick="window.toggleEdu()">✕</button>
+        <button class="edu-close" onclick="window.closeEdu()">✕</button>
       </div>
       <div class="edu-panel-body">
         ${quizInfo}
@@ -2040,8 +2044,25 @@ function renderEduPanel() {
     </div>`;
 }
 
+// In-game: toggle inline panel; on start screen: show as overlay
 window.toggleEdu = () => {
-  state.eduPanelOpen = !state.eduPanelOpen;
+  if (state.phase === "start") {
+    // Start screen: show as overlay
+    showEduOverlay(`<div class="edu-overlay" onclick="if(event.target===this)window.closeEdu()">${renderEduPanelContent()}</div>`);
+  } else {
+    // In-game: toggle inline panel
+    state.eduPanelOpen = !state.eduPanelOpen;
+    render();
+  }
+};
+
+window.closeEdu = () => {
+  state.eduPanelOpen = false;
+  // Remove overlay if present
+  const overlay = document.getElementById("edu-overlay-container");
+  if (overlay) {
+    overlay.innerHTML = "";
+  }
   render();
 };
 
