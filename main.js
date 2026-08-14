@@ -606,6 +606,7 @@ async function playerFire(row, col) {
   if (state.gameMode === "pvp") {
     // P2P: show privacy screen, then P2 fires at P1's grid
     state.currentTurn = "opponent"; // "opponent" = P2 in PvP
+    inputLocked = false;  // ← unlock so P2 can fire after dismissing privacy screen
     showTurnSwitchPrivacy();
     return;
   }
@@ -859,6 +860,7 @@ async function pvpFire(row, col) {
 
   // Switch to P1 with privacy screen
   state.currentTurn = "player";
+  inputLocked = false;  // ← unlock so P1 can fire after dismissing privacy screen
   showTurnSwitchPrivacy();
 }
 window.pvpFire = pvpFire;
@@ -1522,9 +1524,10 @@ window.tutorialPrev = () => {
 let shipCellMap = {};
 
 // 由 playerShipGroups 反推每格在所属船里的角色：船尾 / 船身 / 船首 / 是否有舰桥 / 船型
-function buildShipCellMap() {
+function buildShipCellMap(groups) {
+  const useGroups = groups || playerShipGroups;
   const map = {};
-  for (const g of playerShipGroups) {
+  for (const g of useGroups) {
     const cells = [];
     for (let b = 0; b < 25; b++) if (g.mask & (1 << b)) cells.push(b);
     if (!cells.length) continue;
@@ -1613,7 +1616,10 @@ function shipSegmentSVG(info) {
 }
 
 function renderGrid(side) {
-  if (side === "player") shipCellMap = buildShipCellMap();
+  if (side === "player") {
+    const isP2Placement = state.gameMode === "pvp" && state.p2pPlacementPhase === "p2";
+    shipCellMap = isP2Placement ? buildShipCellMap(state.p2ShipGroups) : buildShipCellMap(playerShipGroups);
+  }
   let html = `<div class="grid"><div class="grid-header"><div></div>`;
   for (let c = 0; c < GRID_SIZE; c++) {
     html += `<div class="grid-label">${String.fromCharCode(65 + c)}</div>`;
