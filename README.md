@@ -4,6 +4,13 @@
 >
 > Built for [Aleo Hackathon](https://hackathon.xyz/events/public/e7ad6199-0078-42ee-9846-b82c385e4c0e) · GameFi & SocialFi Track
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/cpufreestyle/zk-battleship-aleo/blob/main/LICENSE)
+[![Aleo](https://img.shields.io/badge/Aleo-snarkVM-a855f7)](https://aleo.org)
+[![Leo v4.4](https://img.shields.io/badge/Leo-v4.4.1-brightgreen)](https://developer.aleo.org/leo)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-000?logo=vercel)](https://zk-battleship-aleo-fix.vercel.app)
+[![ZKP](https://img.shields.io/badge/Zero--Knowledge-Proofs-2ecc71)](#zk-证明详情--zk-proof-details)
+[![testnet](https://img.shields.io/badge/network-testnet-f1c40f)](#)
+
 **🔗 Live Demo**: https://zk-battleship-aleo-fix.vercel.app
 
 ---
