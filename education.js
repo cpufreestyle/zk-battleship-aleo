@@ -342,3 +342,49 @@ export function renderBitwiseAndDemo() {
       </div>
     </div>`;
 }
+
+/** 渲染隐私保护演示 — 双视角：你看得见船，对手只能看见结果 */
+export function renderPrivacyDemo() {
+  return `
+    <div class="edu-overlay" id="edu-lab-overlay">
+      <div class="edu-card edu-lab-demo">
+        <div class="edu-lab-demo-header">
+          <h3>🔒 隐私保护演示</h3>
+          <button class="edu-skip" onclick="window.eduCloseLab()">✕</button>
+        </div>
+        <div class="edu-lab-demo-body">
+          <p>同一个棋盘，两种视角。切换看看<b>对手能看到什么</b>：</p>
+          <div class="edu-privacy-switch">
+            <button class="edu-view-btn is-active" id="edu-view-mine" onclick="window.eduSwitchView('mine')">👁 我的视角</button>
+            <button class="edu-view-btn" id="edu-view-opp" onclick="window.eduSwitchView('opp')">🤖 对手视角</button>
+          </div>
+          <div class="edu-privacy-boards" id="edu-privacy-board"></div>
+          <p class="edu-lab-hint">点击格子开火（在任一视角都可），对比两边所见</p>
+          <div class="edu-lab-conclusion" id="edu-privacy-conclusion">
+            对手视角里你的船完全隐形 —— 只能看到 💥/🌊 结果，而这些结果由 ZK 证明保证正确。
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** 渲染区块链验证流程演示 */
+export function renderBlockchainDemo() {
+  return `
+    <div class="edu-overlay" id="edu-lab-overlay">
+      <div class="edu-card edu-lab-demo">
+        <div class="edu-lab-demo-header">
+          <h3>⛓️ 区块链验证流程</h3>
+          <button class="edu-skip" onclick="window.eduCloseLab()">✕</button>
+        </div>
+        <div class="edu-lab-demo-body">
+          <p>一次开火从<b>点击到验证</b>的完整链路：</p>
+          <div class="edu-bc-flow" id="edu-bc-flow"></div>
+          <button class="edu-bc-run" onclick="window.eduRunBcFlow()">🚀 模拟一次开火</button>
+          <div class="edu-lab-conclusion" id="edu-bc-conclusion">
+            每一步都有密码学保证：证明由 snarkVM 生成，验证无需看到私有输入。
+          </div>
+        </div>
+      </div>
+    </div>`;
+}

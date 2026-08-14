@@ -16,7 +16,8 @@ import {
 import {
   getQuizForTrigger, renderQuizPopup, renderQuizResult,
   renderCardPopup, renderCardCollection, renderZKLab,
-  renderBitwiseAndDemo, checkCardUnlock, CONCEPT_CARDS,
+  renderBitwiseAndDemo, renderPrivacyDemo, renderBlockchainDemo,
+  checkCardUnlock, CONCEPT_CARDS,
 } from "./education.js";
 import { Net } from "./net.js";
 
@@ -2431,8 +2432,12 @@ window.eduOpenLab = (labId) => {
   if (labId === "bitwise_and") {
     showEduOverlay(renderBitwiseAndDemo());
     initBitwiseDemo();
-  } else {
-    showEduOverlay(`<div class="edu-overlay"><div class="edu-card edu-lab-demo"><div class="edu-lab-demo-header"><h3>🔧 即将上线</h3><button class="edu-skip" onclick="window.eduCloseLab()">✕</button></div><p>这个演示正在开发中，敬请期待！</p></div></div>`);
+  } else if (labId === "privacy") {
+    showEduOverlay(renderPrivacyDemo());
+    initPrivacyDemo();
+  } else if (labId === "blockchain") {
+    showEduOverlay(renderBlockchainDemo());
+    initBlockchainDemo();
   }
 };
 
@@ -2440,6 +2445,13 @@ window.eduCloseLab = () => {
   state.eduLabActive = null;
   const el = document.getElementById("edu-lab-overlay");
   if (el) el.remove();
+  // 若外层 overlay 容器里已无实质内容（edu panel 一起被清掉的场景），
+  // 残留的空 .edu-overlay 会挡住整页点击 —— 一并清空容器。
+  const container = document.getElementById("edu-overlay-container");
+  if (container) {
+    const hasContent = container.querySelector(".edu-panel, .edu-card, .edu-quiz-card");
+    if (!hasContent) container.innerHTML = "";
+  }
 };
 
 function showEduOverlay(html) {
@@ -2525,25 +2537,34 @@ let _bitDemoMask = 0;
 
 function initBitwiseDemo() {
   updateBitwiseDemo();
-  // Attach click handlers after render
+  // Attach click handlers after render.
+  // 必须用事件委托：updateBitwiseDemo() 每次都用 innerHTML 重写格子，
+  // 若把 onclick 直接绑在 .edu-bit 子元素上，第一次重绘后 handler 全部丢失
+  //（这就是"只能点一次"的 bug）。委托绑定在容器上，子元素怎么重写都有效。
   setTimeout(() => {
     const shipsBits = document.getElementById("edu-ships-bits");
     const maskBits = document.getElementById("edu-mask-bits");
     if (shipsBits) {
-      shipsBits.querySelectorAll(".edu-bit").forEach((el, i) => {
-        el.onclick = () => {
+      shipsBits.onclick = (e) => {
+        const bit = e.target.closest(".edu-bit");
+        if (!bit) return;
+        const i = Array.from(shipsBits.querySelectorAll(".edu-bit")).indexOf(bit);
+        if (i >= 0) {
           _bitDemoShips ^= (1 << i);
           updateBitwiseDemo();
-        };
-      });
+        }
+      };
     }
     if (maskBits) {
-      maskBits.querySelectorAll(".edu-bit").forEach((el, i) => {
-        el.onclick = () => {
+      maskBits.onclick = (e) => {
+        const bit = e.target.closest(".edu-bit");
+        if (!bit) return;
+        const i = Array.from(maskBits.querySelectorAll(".edu-bit")).indexOf(bit);
+        if (i >= 0) {
           _bitDemoMask ^= (1 << i);
           updateBitwiseDemo();
-        };
-      });
+        }
+      };
     }
   }, 50);
 }
@@ -2581,6 +2602,122 @@ function updateBitwiseDemo() {
       : `<div class="edu-miss-result">🌊 未命中 — 该格无船</div>`;
   }
 }
+
+// ===== PRIVACY LAB DEMO（双视角：我方见船，对手只见结果） =====
+const _privShips = 0b00100_00010_00000_01000_00100; // 5 格示例船位
+let _privShots = 0;   // 已开火格子 bitmask
+let _privView = "mine";
+
+function initPrivacyDemo() {
+  _privShots = 0;
+  _privView = "mine";
+  updatePrivacyDemo();
+}
+
+window.eduSwitchView = (view) => {
+  _privView = view;
+  updatePrivacyDemo();
+};
+
+function updatePrivacyDemo() {
+  const board = document.getElementById("edu-privacy-board");
+  const mineBtn = document.getElementById("edu-view-mine");
+  const oppBtn = document.getElementById("edu-view-opp");
+  if (!board) return;
+
+  if (mineBtn) mineBtn.classList.toggle("is-active", _privView === "mine");
+  if (oppBtn) oppBtn.classList.toggle("is-active", _privView === "opp");
+
+  let html = `<div class="edu-priv-grid${_privView === "opp" ? " is-opp" : ""}">`;
+  for (let i = 0; i < 25; i++) {
+    const hasShip = (_privShips >> i) & 1;
+    const fired = (_privShots >> i) & 1;
+    let cls = "edu-priv-cell";
+    let content = "";
+    if (fired) {
+      if (hasShip) { cls += " is-hit"; content = "💥"; }
+      else { cls += " is-miss"; content = "🌊"; }
+    } else if (hasShip && _privView === "mine") {
+      cls += " is-ship";
+      content = "🚢";
+    } else if (_privView === "mine") {
+      cls += " is-clickable";
+    } else {
+      cls += " is-unknown";
+      content = "?";
+    }
+    html += `<div class="${cls}" data-bit="${i}">${content}</div>`;
+  }
+  html += `</div>`;
+
+  const label = _privView === "mine"
+    ? "👁 你的视角：能看见自己的船，点击空格开火"
+    : "🤖 对手视角：船完全隐形，只能看到开火结果";
+  html += `<p class="edu-priv-label">${label}</p>`;
+
+  board.innerHTML = html;
+
+  // 事件委托：点击开火（两个视角都允许，方便对比）
+  board.onclick = (e) => {
+    const cell = e.target.closest(".edu-priv-cell");
+    if (!cell) return;
+    const i = parseInt(cell.dataset.bit, 10);
+    if (isNaN(i) || (_privShots >> i) & 1) return; // 已开火
+    _privShots |= (1 << i);
+    updatePrivacyDemo();
+    const hit = (_privShips >> i) & 1;
+    const conc = document.getElementById("edu-privacy-conclusion");
+    if (conc) {
+      conc.innerHTML = hit
+        ? `💥 <b>命中</b> — 对手看到 💥（由 ZK 证明保证），但<b>不知道你其余船在哪</b>`
+        : `🌊 <b>未中</b> — 对手只多了一个 🌊 标记，<b>你的船位依然完全隐藏</b>`;
+    }
+  };
+}
+
+// ===== BLOCKCHAIN FLOW DEMO（开火 → 证明 → 验证 链路动画） =====
+const BC_FLOW_STEPS = [
+  { icon: "🖱️", title: "点击开火", desc: "选择敌方一格，生成公开输入 mask" },
+  { icon: "🔐", title: "取私有输入", desc: "ships bitstring 作为私有输入进入 ZK 程序（永不明文传输）" },
+  { icon: "⚡", title: "生成 ZK 证明", desc: "Aleo snarkVM 在浏览器内执行 verify_hit 并生成证明" },
+  { icon: "⛓️", title: "证明可上链", desc: "证明包含计算正确性承诺，无需暴露 ships" },
+  { icon: "✅", title: "验证通过", desc: "任何一方可验证证明 → 输出 ships & mask（命中/未中）" },
+];
+
+function initBlockchainDemo() {
+  const flow = document.getElementById("edu-bc-flow");
+  if (!flow) return;
+  flow.innerHTML = BC_FLOW_STEPS.map((s, i) => `
+    <div class="edu-bc-step" data-step="${i}">
+      <span class="edu-bc-icon">${s.icon}</span>
+      <div class="edu-bc-text">
+        <div class="edu-bc-title">${i + 1}. ${s.title}</div>
+        <div class="edu-bc-desc">${s.desc}</div>
+      </div>
+    </div>`).join("");
+}
+
+window.eduRunBcFlow = () => {
+  const steps = document.querySelectorAll(".edu-bc-step");
+  steps.forEach(s => s.classList.remove("is-active", "is-done"));
+  const conc = document.getElementById("edu-bc-conclusion");
+  if (conc) conc.innerHTML = "执行中…";
+
+  steps.forEach((step, i) => {
+    setTimeout(() => {
+      steps.forEach((s, j) => {
+        s.classList.toggle("is-active", j === i);
+        s.classList.toggle("is-done", j < i);
+      });
+      if (i === steps.length - 1) {
+        const conc = document.getElementById("edu-bc-conclusion");
+        if (conc) {
+          conc.innerHTML = `✅ 完成！全程 <b>5 步</b>，私有输入 ships 从未以明文出现 — 这就是零知识证明。`;
+        }
+      }
+    }, i * 700);
+  });
+};
 
 function renderProofPanel() {
   const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
