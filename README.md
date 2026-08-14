@@ -8,6 +8,18 @@
 
 ---
 
+## 📸 游戏截图 / Screenshots
+
+| 开始页 — 模式选择 + 战绩面板 | ZK 实验室 — 隐私保护演示 |
+|:---:|:---:|
+| ![开始页](screenshots/start.png) | ![ZK 实验室](screenshots/zk-lab.png) |
+
+| 战斗中 — ZK 证明 + 区块链状态栏 | 结算 — Blockchain Summary |
+|:---:|:---:|
+| ![战斗](screenshots/battle.png) | ![结算](screenshots/gameover.png) |
+
+---
+
 ## 🎯 项目简介 / What Is This?
 
 **中文**: 隐海战舰是一款隐私保护战舰游戏，战舰位置通过 Aleo 上的**零知识证明**保护。玩家可以验证命中/未命中结果正确，**且永远不暴露**战舰放置位置。
