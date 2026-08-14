@@ -17,6 +17,7 @@ import {
   renderCardPopup, renderCardCollection, renderZKLab,
   renderBitwiseAndDemo, checkCardUnlock, CONCEPT_CARDS,
 } from "./education.js";
+import { Net } from "./net.js";
 
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
@@ -96,8 +97,13 @@ function sunkShipBy(groups, hitsBitstring, mask) {
 // ===== GAME STATE =====
 const state = {
   phase: "start",
-  // Game mode: "ai" (vs computer) or "pvp" (pass-and-play)
+  // Game mode: "ai" (vs computer), "pvp" (pass-and-play), or "online" (WebRTC)
   gameMode: "ai",
+  // Online mode state
+  onlineState: "idle", // idle | creating | joining | waiting | connected
+  onlineRoomCode: "",
+  onlineStatus: "",
+  onlineJoinInput: "",
   // P2P: which player is placing ("p1" then "p2")
   p2pPlacementPhase: null,
   // P2P: P2's ships/groups (P1 is playerShips/playerShipGroups)
@@ -482,6 +488,22 @@ function chooseOpponentTarget() {
 async function playerFire(row, col) {
   if (state.phase !== "battle" || state.currentTurn !== "player") return;
   if (inputLocked) return;
+
+  // Online mode: send fire command to opponent, wait for result
+  if (state.gameMode === "online") {
+    const mask = getMask(row, col);
+    if (state.playerShots & mask) return;
+    inputLocked = true;
+    state.playerShots |= mask;
+    const cellName = String.fromCharCode(65 + col) + (row + 1);
+    addBattle(`你向 ${cellName} 开火`, "me");
+    sfx.fire();
+    const k = fx.key("opponent", row, col);
+    fx.lockOn(k, FEEL.LOCK_ON_MS + 170);
+    Net.send({ type: "fire", row, col });
+    // Result will arrive via handleOnlineFireResult
+    return;
+  }
 
   // Special weapon mode: clicking enemy grid uses the weapon
   if (state.weapons.selectedWeapon) {
@@ -1039,6 +1061,25 @@ function handlePlacementClick(row, col) {
       return;
     }
 
+    // Online: placement done → notify opponent and wait
+    if (state.gameMode === "online") {
+      Net.send({ type: "shipsReady" });
+      state.onlineOpponentReady = state.onlineOpponentReady || false;
+      if (state.onlineOpponentReady) {
+        // Both ready — start battle
+        state.phase = "battle";
+        state.currentTurn = "player";
+        addBattle("🌐 双方舰队就位，战斗开始！", "sys");
+        fx.banner("开战！", "sunk", 1000);
+        sfx.sunk();
+      } else {
+        addBattle("✅ 舰队就位，等待对手放船…", "sys");
+        fx.banner("舰队就位 · 等待对手", "warn", 1500);
+      }
+      render();
+      return;
+    }
+
     // AI mode: generate opponent ships and start battle
     state.opponentShips = generateRandomShips();
     state.phase = "battle";
@@ -1256,14 +1297,18 @@ function renderStart() {
 
         <div class="config-section">
           <div class="config-label">🎮 对战模式 / Game Mode</div>
-          <div class="mode-options">
+          <div class="mode-options mode-options-3">
             <button class="mode-btn${state.gameMode === "ai" ? " is-active" : ""}" onclick="window.selectMode('ai')">
               <span class="mode-name">🤖 vs AI</span>
               <span class="mode-desc">对战电脑</span>
             </button>
             <button class="mode-btn${state.gameMode === "pvp" ? " is-active" : ""}" onclick="window.selectMode('pvp')">
-              <span class="mode-name">👥 同设备对战</span>
-              <span class="mode-desc">两人轮流 · ZK防偷看</span>
+              <span class="mode-name">👥 同设备</span>
+              <span class="mode-desc">轮流 · ZK防偷看</span>
+            </button>
+            <button class="mode-btn${state.gameMode === "online" ? " is-active" : ""}" onclick="window.selectMode('online')">
+              <span class="mode-name">🌐 联机</span>
+              <span class="mode-desc">互联网对战</span>
             </button>
           </div>
         </div>
@@ -1273,11 +1318,39 @@ function renderStart() {
           <div class="config-label">⚔️ 难度 / Difficulty (Best of 3)</div>
           <div class="diff-options">${diffOpts}</div>
           <div class="config-desc">${DIFFICULTY[state.difficulty].desc}</div>
-        </div>` : `
+        </div>` : state.gameMode === "pvp" ? `
         <div class="config-section">
           <div class="zk-pvp-note">
             <b>🔒 ZK 隐私对战</b><br>
             两人轮流在同一设备上操作。放船时遮挡屏幕，开火时 ZK 证明验证命中结果——<b>对手无法偷看你的船位</b>，但能验证结果正确。这正是零知识证明的核心价值。
+          </div>
+        </div>` : `
+        <div class="config-section">
+          <div class="online-lobby">
+            ${state.onlineState === "idle" || state.onlineState === "" ? `
+              <div class="online-actions">
+                <button class="online-btn" onclick="window.onlineCreate()">🏠 创建房间</button>
+                <div class="online-divider">— 或 —</div>
+                <div class="online-join">
+                  <input type="text" class="online-input" placeholder="输入房间号" maxlength="4"
+                    value="${state.onlineJoinInput}"
+                    oninput="window.onlineSetInput(this.value)" />
+                  <button class="online-btn" onclick="window.onlineJoin()">🎮 加入房间</button>
+                </div>
+              </div>
+              <div class="online-note">
+                <b>🌐 互联网联机对战</b><br>
+                创建房间后分享房间号给好友，或输入好友的房间号加入。<br>
+                通过 WebRTC 直连，<b>船位不经过任何服务器</b>，ZK 证明验证每次开火结果。
+              </div>
+            ` : `
+              <div class="online-status-box">
+                <div class="online-status-spinner"></div>
+                <div class="online-status-text">${state.onlineStatus || "连接中…"}</div>
+                ${state.onlineRoomCode ? `<div class="online-room-code">房间号: <b>${state.onlineRoomCode}</b></div>` : ""}
+                ${state.onlineState !== "connected" ? `<button class="online-cancel" onclick="window.onlineCancel()">取消</button>` : ""}
+              </div>
+            `}
           </div>
         </div>`}
 
@@ -1336,10 +1409,247 @@ window.selectFleet = (mode) => {
   render();
 };
 window.selectMode = (mode) => {
+  // Disconnect if switching away from online
+  if (state.gameMode === "online" && mode !== "online") {
+    Net.disconnect();
+    state.onlineState = "idle";
+  }
   state.gameMode = mode;
   sfx.click();
   render();
 };
+
+// ===== ONLINE MULTIPLAYER =====
+window.onlineSetInput = (val) => {
+  state.onlineJoinInput = val.toUpperCase().replace(/[^A-Z0-9]/g, "").substring(0, 4);
+};
+
+window.onlineCreate = async () => {
+  sfx.click();
+  state.onlineState = "creating";
+  state.onlineStatus = "正在创建房间…";
+  render();
+
+  await Net.createRoom(
+    (status) => { state.onlineStatus = status; render(); },
+    (data) => handleNetMessage(data),
+    (isHost) => onOnlineConnected(isHost)
+  );
+};
+
+window.onlineJoin = async () => {
+  const code = state.onlineJoinInput.trim();
+  if (code.length !== 4) { sfx.deny(); return; }
+  sfx.click();
+  state.onlineState = "joining";
+  state.onlineStatus = `正在连接房间 ${code}…`;
+  render();
+
+  await Net.joinRoom(
+    code,
+    (status) => { state.onlineStatus = status; render(); },
+    (data) => handleNetMessage(data),
+    (isHost) => onOnlineConnected(isHost)
+  );
+};
+
+window.onlineCancel = () => {
+  Net.disconnect();
+  state.onlineState = "idle";
+  state.onlineStatus = "";
+  sfx.click();
+  render();
+};
+
+function onOnlineConnected(isHost) {
+  state.onlineState = "connected";
+  state.onlineStatus = isHost ? "对手已加入！" : "已连接到房间！";
+  state.onlineRoomCode = Net.getRoomCode().substring(3);
+
+  // Host goes first (placement), guest waits
+  if (isHost) {
+    state.phase = "placement";
+    state.currentTurn = "player";
+  } else {
+    state.phase = "placement";
+    state.currentTurn = "opponent"; // guest = "opponent" for placement order
+  }
+  state.placingShipIndex = 0;
+  state.placementDirection = "horizontal";
+  state.showPrivacyScreen = false;
+  sfx.place();
+  fx.banner("🌐 联机对战开始！放船吧", "sunk", 1500);
+  render();
+}
+
+function handleNetMessage(data) {
+  if (!data) return;
+  switch (data.type) {
+    case "join":
+      // Guest joined — host starts placement
+      state.onlineState = "connected";
+      break;
+    case "shipsReady":
+      // Opponent finished placing ships
+      state.onlineOpponentReady = true;
+      checkBothReady();
+      break;
+    case "fire":
+      handleOnlineFire(data.row, data.col);
+      break;
+    case "fireResult":
+      handleOnlineFireResult(data.row, data.col, data.isHit, data.sunkShip);
+      break;
+    case "scan":
+      handleOnlineScan(data.row, data.col, data.count);
+      break;
+    case "turnSwitch":
+      state.currentTurn = "player";
+      render();
+      break;
+    case "surrender":
+      addBattle("🏳️ 对手投降了！", "sys");
+      state.phase = "gameover";
+      state.winner = "player";
+      sfx.victory();
+      render();
+      break;
+    case "disconnect":
+      addBattle("❌ 对手断开了连接", "sys");
+      if (state.phase === "battle" || state.phase === "placement") {
+        state.phase = "gameover";
+        state.winner = "player";
+        fx.banner("对手断线 · 你赢了", "sunk", 2000);
+        sfx.victory();
+        render();
+      }
+      break;
+  }
+}
+
+function checkBothReady() {
+  if (state.onlineOpponentReady && state.placingShipIndex >= SHIPS.length) {
+    // Both players placed ships — start battle
+    state.phase = "battle";
+    state.currentTurn = "player"; // Host always starts
+    addBattle("🌐 双方舰队就位，战斗开始！", "sys");
+    fx.banner("开战！", "sunk", 1000);
+    sfx.sunk();
+    render();
+  }
+}
+
+function handleOnlineFire(row, col) {
+  // Opponent fired at my ships — compute result locally and send back
+  const mask = getMask(row, col);
+  const isHit = (state.playerShips & mask) !== 0;
+  let sunkShip = null;
+
+  if (isHit) {
+    // Track opponent's shots as p2Hits
+    state.p2Hits |= mask;
+    state.playerShipsRemaining--;
+    sunkShip = sunkShipBy(playerShipGroups, state.p2Hits, mask);
+    if (sunkShip) {
+      addBattle(`🔥 你的${sunkShip.cn}被击沉！`, "hit");
+      sfx.sunk();
+      fx.shake("hard");
+    } else {
+      addBattle(`💥 你的 ${String.fromCharCode(65+col)}${row+1} 中弹！`, "hit");
+      sfx.hit(false);
+      fx.shake("soft");
+    }
+    const k = fx.key("player", row, col);
+    fx.explode(k, sunkShip !== null);
+  } else {
+    state.p2Shots |= mask;
+    addBattle(`🌊 对手 ${String.fromCharCode(65+col)}${row+1} 未中`, "miss");
+    sfx.miss();
+    const k = fx.key("player", row, col);
+    fx.ripple(k);
+  }
+  state.p2Shots |= mask;
+  render();
+
+  // Send result back
+  Net.send({
+    type: "fireResult",
+    row, col,
+    isHit,
+    sunkShip: sunkShip ? { name: sunkShip.name, cn: sunkShip.cn } : null,
+  });
+
+  // Check if opponent won
+  const victory = (state.playerShips & state.p2Hits) === state.playerShips;
+  if (victory) {
+    setTimeout(() => {
+      state.phase = "gameover";
+      state.winner = "opponent";
+      sfx.defeat();
+      render();
+    }, 600);
+  } else if (!isHit) {
+    // Miss → switch to player's turn
+    state.currentTurn = "player";
+    inputLocked = false;
+    render();
+  }
+  // If hit, opponent keeps firing (combo) — wait for next fire message
+}
+
+function handleOnlineFireResult(row, col, isHit, sunkShip) {
+  // Result of my shot came back
+  const mask = getMask(row, col);
+  state.playerShots |= mask;
+
+  if (isHit) {
+    state.playerHits |= mask;
+    state.opponentShipsRemaining--; // In online, "opponent" = remote player
+    if (sunkShip) {
+      addBattle(`🔥 ${String.fromCharCode(65+col)}${row+1} 命中——对方${sunkShip.cn}被击沉！`, "hit");
+      sfx.sunk();
+      fx.shake("hard");
+      fx.banner(`击沉 ${sunkShip.cn}`, "sunk", 1200);
+    } else {
+      addBattle(`💥 ${String.fromCharCode(65+col)}${row+1} 命中！`, "hit");
+      sfx.hit(false);
+      fx.shake("soft");
+    }
+    const k = fx.key("opponent", row, col);
+    fx.explode(k, sunkShip !== null);
+    state.combo++;
+  } else {
+    addBattle(`🌊 ${String.fromCharCode(65+col)}${row+1} 未中`, "miss");
+    sfx.miss();
+    const k = fx.key("opponent", row, col);
+    fx.ripple(k);
+    state.combo = 0;
+  }
+  render();
+
+  // Check victory
+  const victory = (state.opponentShips & state.playerHits) === state.opponentShips;
+  if (victory) {
+    setTimeout(() => {
+      state.phase = "gameover";
+      state.winner = "player";
+      sfx.victory();
+      render();
+    }, 600);
+    return;
+  }
+
+  if (!isHit) {
+    // Miss → opponent's turn
+    state.currentTurn = "opponent";
+    inputLocked = false; // unlock for when turn comes back
+    render();
+  } else {
+    // Hit → player keeps firing (combo)
+    inputLocked = false;
+    render();
+  }
+}
 
 // P2P: dismiss privacy screen and proceed to placement/battle
 window.dismissPrivacy = () => {
@@ -2507,6 +2817,14 @@ window.restart = () => {
   sfx.click();
   fx.clear();
   inputLocked = false;
+  // Disconnect online session if active
+  if (state.gameMode === "online") {
+    Net.send({ type: "surrender" });
+    Net.disconnect();
+    state.onlineState = "idle";
+    state.onlineOpponentReady = false;
+    state.gameMode = "ai"; // Reset to AI mode
+  }
   // If match is over, go back to start screen
   if (state.matchOver) {
     state.phase = "start";
