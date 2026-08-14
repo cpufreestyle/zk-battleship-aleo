@@ -147,7 +147,6 @@ const state = {
   cpuMs: 0,
   // AI Panel
   aiPanelOpen: false,
-  aiPanelData: null,
 };
 
 // ===== ZK VERIFICATION =====
@@ -1051,6 +1050,8 @@ function render() {
   // 全量 innerHTML 重写会把棋盘整个换掉，格子的屏幕坐标可能变。
   // 通知特效层重新量一遍并贴回去 —— 详见 fx.js 顶部说明。
   fx.afterRender();
+  // 统一同步状态到 MCP 桥接层
+  syncState(state);
 }
 
 function renderStart() {
@@ -1690,6 +1691,7 @@ function renderAIPanel() {
           <button class="ai-tool-btn" onclick="window.aiReview()">📋 战局复盘</button>
           <button class="ai-tool-btn" onclick="window.aiSuggest()">🎯 推荐射击</button>
           <button class="ai-tool-btn" onclick="window.aiExplain()">🔐 解释证明</button>
+          ${state.gpuEnabled ? '<button class="ai-tool-btn" onclick="window.aiBenchmark()">⚡ GPU 跑分</button>' : ""}
         </div>
         <div class="ai-analysis" id="ai-analysis"></div>
       </div>
@@ -1698,7 +1700,6 @@ function renderAIPanel() {
 
 window.toggleAI = () => {
   state.aiPanelOpen = !state.aiPanelOpen;
-  if (state.aiPanelOpen) syncState(state);
   render();
 };
 
@@ -1708,7 +1709,6 @@ window.aiFire = (row, col) => {
 };
 
 window.aiAnalyze = () => {
-  syncState(state);
   const bf = callTool("get_battlefield");
   const el = document.getElementById("ai-analysis");
   if (!el) return;
@@ -1726,7 +1726,6 @@ window.aiAnalyze = () => {
 };
 
 window.aiReview = () => {
-  syncState(state);
   const review = callTool("battle_review");
   const el = document.getElementById("ai-analysis");
   if (!el) return;
@@ -1744,7 +1743,6 @@ window.aiReview = () => {
 };
 
 window.aiSuggest = () => {
-  syncState(state);
   const sug = callTool("suggest_move");
   const el = document.getElementById("ai-analysis");
   if (!el) return;
@@ -1760,7 +1758,6 @@ window.aiSuggest = () => {
 };
 
 window.aiExplain = () => {
-  syncState(state);
   const proof = callTool("explain_proof");
   const el = document.getElementById("ai-analysis");
   if (!el) return;
@@ -1774,6 +1771,37 @@ window.aiExplain = () => {
         <div><b>隐私:</b> ${proof.privacyGuarantee}</div>
         <div><b>结果:</b> <code>${proof.result}</code></div>
         <div><b>证明:</b> ${proof.isZkProof ? "✓ 真实 ZK" : "⚠ 回退"} ${proof.proofHash}</div>
+      </div>
+    </div>`;
+};
+
+window.aiBenchmark = async () => {
+  const ships = state.opponentShips || 0b00100_00010_00000_01000_00100;
+  const mask = 1 << 12;
+  const bm = await ZKGPU.benchmark(ships, mask);
+  const el = document.getElementById("ai-analysis");
+  if (!el) return;
+  if (bm.gpuMs < 0) {
+    el.innerHTML = `<div class="ai-result"><div class="ai-result-head">⚡ GPU Benchmark</div><div class="ai-result-body">WebGPU 不可用</div></div>`;
+    return;
+  }
+  const barGpu = Math.min(100, bm.gpuMs * 10);
+  const barCpu = Math.min(100, bm.cpuMs * 100);
+  el.innerHTML = `
+    <div class="ai-result">
+      <div class="ai-result-head">⚡ GPU vs CPU Benchmark</div>
+      <div class="ai-result-body">
+        <div class="bench-row">
+          <span class="bench-label">⚡ WebGPU</span>
+          <div class="bench-bar"><div class="bench-fill bench-gpu" style="width:${barGpu}%"></div></div>
+          <span class="bench-ms">${bm.gpuMs}ms</span>
+        </div>
+        <div class="bench-row">
+          <span class="bench-label">🔧 CPU</span>
+          <div class="bench-bar"><div class="bench-fill bench-cpu" style="width:${barCpu}%"></div></div>
+          <span class="bench-ms">${bm.cpuMs}ms</span>
+        </div>
+        <div class="bench-speedup">加速倍数: ${bm.speedup}x</div>
       </div>
     </div>`;
 };
