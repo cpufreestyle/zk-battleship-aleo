@@ -2068,3 +2068,64 @@ body {
 .bench-cpu { background: linear-gradient(90deg, #e74c3c, #c0392b); }
 .bench-ms { font-size: 0.72rem; font-weight: 700; min-width: 50px; text-align: right; }
 .bench-speedup { font-size: 0.8rem; font-weight: 700; color: var(--color-gold); margin-top: 8px; text-align: center; }
+
+/* ===== SPECIAL WEAPONS ===== */
+.weapon-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+.weapon-btn {
+  padding: 4px 10px;
+  background: var(--bg-cell);
+  color: var(--color-text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.weapon-btn:hover:not(:disabled) { border-color: var(--color-accent); transform: translateY(-1px); }
+.weapon-btn.is-active {
+  background: rgba(52, 152, 219, 0.2);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+}
+.weapon-btn.is-used { opacity: 0.35; cursor: not-allowed; }
+
+/* ===== WEATHER BADGE ===== */
+.weather-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(52, 152, 219, 0.1);
+  color: var(--color-accent);
+  border: 1px solid rgba(52, 152, 219, 0.2);
+}
+
+/* ===== RANK BADGE ===== */
+.rank-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(241, 196, 15, 0.08);
+  white-space: nowrap;
+}
+
+/* ===== GAME OVER RANK ===== */
+.go-rank {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(241, 196, 15, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(241, 196, 15, 0.2);
+}
+.go-rank-title { font-size: 0.8rem; font-weight: 700; color: var(--color-gold); margin-bottom: 8px; }
+.go-rank-info { display: flex; align-items: center; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.go-rank-change { font-size: 0.9rem; font-weight: 800; }
+.rank-up { color: #2ecc71; }
+.rank-down { color: #e74c3c; }
+.go-rank-badge { font-size: 0.85rem; font-weight: 700; }
+.go-rank-streak { font-size: 0.78rem; color: var(--color-gold); }

@@ -5,6 +5,13 @@ import * as fx from "./fx.js";
 import { ZKGPU } from "./gpu.js";
 import { generateAIPanel, callTool } from "./mcp.js";
 import { syncState } from "./state-mcp.js";
+import {
+  WEAPONS, initWeapons, canUseWeapon, consumeWeapon,
+  WEATHER, rollWeather, applyWeatherEffect, isScanDisabled,
+  checkSubmarineDodge, getRevealCell, checkFrigateRapidFire,
+  SHIP_ABILITIES,
+  getRank, getRankProgress, recordMatch, loadRankData, getStreakBonus,
+} from "./features.js";
 
 // ===== GAME CONFIGURATION =====
 const GRID_SIZE = 5;
@@ -147,6 +154,16 @@ const state = {
   cpuMs: 0,
   // AI Panel
   aiPanelOpen: false,
+  // Special weapons
+  weapons: initWeapons(),
+  // Weather
+  weather: "clear",
+  weatherTurnCounter: 0,
+  // Ship ability state
+  submarineDodgeAvailable: true,
+  frigateTurnCounter: 0,
+  // Rank
+  rankData: loadRankData(),
 };
 
 // ===== ZK VERIFICATION =====
@@ -453,10 +470,24 @@ async function playerFire(row, col) {
   if (state.phase !== "battle" || state.currentTurn !== "player") return;
   if (inputLocked) return;
 
+  // Special weapon mode: clicking enemy grid uses the weapon
+  if (state.weapons.selectedWeapon) {
+    return executeWeapon(row, col);
+  }
+
   // Scan mode: clicking enemy grid triggers ZK radar scan instead of firing
   if (state.scanMode) {
     return playerScan(row, col);
   }
+
+  // Weather effect: storm may deviate shot
+  const weatherResult = applyWeatherEffect(state.weather, row, col, GRID_SIZE);
+  if (weatherResult.deviated) {
+    fx.banner("⛈️ 风暴偏移！射击偏离了目标格", "warn", 1000);
+    addBattle(`⛈️ 风暴偏移 — 瞄准 ${String.fromCharCode(65+col)}${row+1} → 实际落点 ${String.fromCharCode(65+weatherResult.col)}${weatherResult.row+1}`, "sys");
+  }
+  row = weatherResult.row;
+  col = weatherResult.col;
 
   const mask = getMask(row, col);
   if (state.playerShots & mask) return;
@@ -589,6 +620,121 @@ function activateScan() {
   render();
 }
 window.activateScan = activateScan;
+
+// ===== SPECIAL WEAPONS =====
+window.selectWeapon = (weaponId) => {
+  if (!canUseWeapon(state.weapons, weaponId)) return;
+  if (state.phase !== "battle" || state.currentTurn !== "player") return;
+  state.weapons.selectedWeapon = state.weapons.selectedWeapon === weaponId ? null : weaponId;
+  state.scanMode = false; // Can't scan and weapon at same time
+  const wp = WEAPONS[weaponId];
+  if (state.weapons.selectedWeapon) {
+    fx.banner(`${wp.icon} ${wp.name}已装填 — 点击敌方海域`, "warn", 1200);
+  }
+  render();
+};
+
+async function executeWeapon(row, col) {
+  const weaponId = state.weapons.selectedWeapon;
+  if (!weaponId) return false;
+  const wp = WEAPONS[weaponId];
+  state.weapons.selectedWeapon = null;
+  consumeWeapon(state.weapons, weaponId);
+  inputLocked = true;
+
+  if (weaponId === "torpedo") {
+    // Fire entire row
+    sfx.fire();
+    fx.banner(`${wp.icon} 鱼雷齐射 — 第 ${row + 1} 行`, "sunk", 1000);
+    addBattle(`🎯 发射鱼雷 — 攻击第 ${row + 1} 行`, "me");
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const mask = getMask(row, c);
+      if (state.playerShots & mask) continue;
+      state.playerShots |= mask;
+      state.turnCount++;
+      const isHit = await zkVerifyHit(state.opponentShips, mask);
+      if (isHit) {
+        state.playerHits |= mask;
+        state.opponentShipsRemaining--;
+        state.combo++;
+        state.stats.hits++;
+        const k = fx.key("opponent", row, c);
+        fx.explode(k, false);
+        sfx.hit(false);
+      }
+    }
+    render();
+    inputLocked = false;
+    // Check victory
+    const victory = await zkVerifyVictory(state.opponentShips, state.playerHits);
+    if (victory) { handleVictory(); return true; }
+    state.currentTurn = "opponent";
+    render();
+    setTimeout(() => opponentFire(), 800);
+    return true;
+  }
+
+  if (weaponId === "depthCharge") {
+    // Hit 3x3 area
+    sfx.fire();
+    fx.banner(`${wp.icon} 深水炸弹 — 3×3 区域饱和打击`, "sunk", 1000);
+    addBattle(`💣 投放深水炸弹 — 中心 ${String.fromCharCode(65+col)}${row+1}`, "me");
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = row + dr, c = col + dc;
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) continue;
+        const mask = getMask(r, c);
+        if (state.playerShots & mask) continue;
+        state.playerShots |= mask;
+        state.turnCount++;
+        const isHit = await zkVerifyHit(state.opponentShips, mask);
+        if (isHit) {
+          state.playerHits |= mask;
+          state.opponentShipsRemaining--;
+          state.combo++;
+          state.stats.hits++;
+          const k = fx.key("opponent", r, c);
+          fx.explode(k, false);
+        }
+      }
+    }
+    sfx.sunk();
+    fx.shake("hard");
+    render();
+    inputLocked = false;
+    const victory = await zkVerifyVictory(state.opponentShips, state.playerHits);
+    if (victory) { handleVictory(); return true; }
+    state.currentTurn = "opponent";
+    render();
+    setTimeout(() => opponentFire(), 800);
+    return true;
+  }
+
+  if (weaponId === "emp") {
+    // Skip opponent turn
+    sfx.fire();
+    fx.banner(`${wp.icon} EMP — 对手下回合被封锁！`, "sunk", 1500);
+    addBattle(`⚡ 释放 EMP — 对手被封锁一回合`, "me");
+    fx.shake("hard");
+    state.empActive = true;
+    inputLocked = false;
+    render();
+    return true;
+  }
+
+  return false;
+}
+
+function handleVictory() {
+  state.phase = "gameover";
+  state.winner = "player";
+  // Record rank
+  const result = recordMatch(true, 1000 + (state.difficulty === "hard" ? 200 : state.difficulty === "easy" ? -100 : 0));
+  state.lastRankResult = result;
+  sfx.victory();
+  render();
+  inputLocked = false;
+}
 
 // ===== P2P FIRE (Player 2 fires at Player 1's grid) =====
 async function pvpFire(row, col) {
@@ -1584,12 +1730,40 @@ function renderStatusBar() {
     ? `<span class="combo-badge">🔥 连击 x${state.combo}</span>`
     : "";
 
+  // Weather indicator
+  const w = WEATHER[state.weather];
+  const weatherBadge = state.phase === "battle"
+    ? `<span class="weather-badge" title="${w.name}：${w.desc}">${w.icon} ${w.name}</span>`
+    : "";
+
   // ZK Radar Scan button
-  const scanBtn = state.phase === "battle" && state.currentTurn === "player" && state.scansRemaining > 0
+  const scanDisabled = isScanDisabled(state.weather);
+  const scanBtn = state.phase === "battle" && state.currentTurn === "player" && state.scansRemaining > 0 && !scanDisabled
     ? `<button class="scan-btn${state.scanMode ? " is-active" : ""}" onclick="window.activateScan()">📡 ZK 雷达扫描</button>`
-    : state.scansRemaining === 0 && state.phase === "battle"
-      ? '<span class="scan-btn scan-btn--used">✅ 扫描已用</span>'
-      : "";
+    : scanDisabled && state.phase === "battle"
+      ? '<span class="scan-btn scan-btn--used">🌫️ 雾天·扫描失效</span>'
+      : state.scansRemaining === 0 && state.phase === "battle"
+        ? '<span class="scan-btn scan-btn--used">✅ 扫描已用</span>'
+        : "";
+
+  // Special weapons buttons
+  const weaponBtns = state.phase === "battle" && state.currentTurn === "player" && state.gameMode === "ai"
+    ? Object.values(WEAPONS).map(wp => {
+        const remaining = state.weapons[wp.id]?.remaining || 0;
+        const isActive = state.weapons.selectedWeapon === wp.id;
+        const isUsed = remaining === 0;
+        return `<button class="weapon-btn${isActive ? " is-active" : ""}${isUsed ? " is-used" : ""}"
+          onclick="window.selectWeapon('${wp.id}')"
+          ${isUsed ? "disabled" : ""}
+          title="${wp.name}：${wp.desc}">
+          ${wp.icon} ${wp.name}${remaining > 0 ? ` (${remaining})` : ""}
+        </button>`;
+      }).join("")
+    : "";
+
+  // Rank badge
+  const rank = getRank(state.rankData.rating);
+  const rankBadge = `<span class="rank-badge" style="color:${rank.color}">${rank.icon} ${rank.name} ${state.rankData.rating}</span>`;
 
   // 三态：加载中（引擎正在 Worker 里实例化 wasm）/ 已启用（真实 ZK）/ 降级（环境不支持）
   const zkLoading = !state.zkEnabled && window.__zkDiag && window.__zkDiag.mode === "probing";
@@ -1608,10 +1782,12 @@ function renderStatusBar() {
     </label>`;
 
   return `
-    <div class="status-left">${status} ${comboBadge}</div>
+    <div class="status-left">${status} ${comboBadge} ${weatherBadge}</div>
     <div class="status-right">
       ${scanBtn}
+      ${weaponBtns ? `<div class="weapon-bar">${weaponBtns}</div>` : ""}
       ${zkStatus}
+      ${rankBadge}
       ${state.aleoAddress ? `<span class="addr-badge">Aleo: ${state.aleoAddress.substring(0, 12)}...</span>` : ""}
       ${speedSel}
     </div>`;
@@ -1980,6 +2156,19 @@ function renderGameOver() {
           </div>` : ""}
           ${state.maxCombo >= 2 ? `<div class="go-combo">🔥 最高连击：x${state.maxCombo}</div>` : ""}
         </div>
+        ${state.lastRankResult ? `
+        <div class="go-rank">
+          <div class="go-rank-title">🎖 排名变动</div>
+          <div class="go-rank-info">
+            <span class="go-rank-change ${state.lastRankResult.change >= 0 ? "rank-up" : "rank-down"}">
+              ${state.lastRankResult.change >= 0 ? "▲" : "▼"} ${Math.abs(state.lastRankResult.change)}
+            </span>
+            <span class="go-rank-badge" style="color:${state.lastRankResult.rank.color}">
+              ${state.lastRankResult.rank.icon} ${state.lastRankResult.rank.name} ${state.rankData.rating}
+            </span>
+            ${state.lastRankResult.streak >= 3 ? `<span class="go-rank-streak">${getStreakBonus(state.lastRankResult.streak)}</span>` : ""}
+          </div>
+        </div>` : ""}
         <div class="go-actions">${actionBtn}</div>
       </div>
     </div>
@@ -2057,6 +2246,14 @@ function resetRoundState() {
   state.p2MaxCombo = 0;
   state.p2pPlacementPhase = state.gameMode === "pvp" ? "p1" : null;
   state.showPrivacyScreen = state.gameMode === "pvp";
+  // Reset special features
+  state.weapons = initWeapons();
+  state.weather = rollWeather();
+  state.weatherTurnCounter = 0;
+  state.submarineDodgeAvailable = true;
+  state.frigateTurnCounter = 0;
+  state.empActive = false;
+  state.lastRankResult = null;
   resetAI();
 }
 
