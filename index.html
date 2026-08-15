@@ -2,9 +2,26 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>隐海战舰 — Shadow Fleet | ZK Battleship on Aleo</title>
-    <meta name="description" content="Zero-knowledge Battleship game built on Aleo blockchain — ship positions are private, verified by ZK proofs" />
+    <meta name="description" content="隐海战舰 Shadow Fleet — 基于 Aleo 零知识证明的隐私战舰棋。战舰位置加密保护，对手能验证命中结果却看不到船位。3种对战模式，WebGPU加速，区块链课堂。" />
+    <meta name="keywords" content="Aleo, ZK, zero-knowledge, battleship, GameFi, privacy, snarkVM, Leo, blockchain, WebRTC, 零知识证明, 隐私, 区块链游戏" />
+    <meta name="author" content="MichaelQiu" />
+    <meta name="theme-color" content="#0a1929" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="隐海战舰 — Shadow Fleet | ZK Battleship on Aleo" />
+    <meta property="og:description" content="基于 Aleo 零知识证明的隐私战舰棋：对手能验证命中结果、却永远看不到你的船在哪。" />
+    <meta property="og:url" content="https://zk-battleship-aleo-fix.vercel.app" />
+    <meta property="og:image" content="https://raw.githubusercontent.com/cpufreestyle/zk-battleship-aleo/main/screenshots/start.png" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Shadow Fleet — ZK Battleship on Aleo" />
+    <meta name="twitter:description" content="Privacy-preserving Battleship: verify hits via zero-knowledge proofs, never reveal ship positions." />
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/cpufreestyle/zk-battleship-aleo/main/screenshots/start.png" />
+
     <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
 
     <!--
@@ -26,7 +43,7 @@
     <script src="./coi-serviceworker.js"></script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app"><div class="initial-loader"><div class="initial-loader__spinner"></div><p>隐海战舰加载中…</p></div></div>
     <div id="tutorial-overlay" hidden></div>
     <script type="module" src="/main.js"></script>
   </body>
