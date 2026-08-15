@@ -2399,16 +2399,17 @@ function renderEduPanelContent() {
     </div>`;
 }
 
-// In-game: toggle inline panel; on start screen: show as overlay
+// 区块链课堂（含概念卡片收藏 + ZK 实验室）——
+// 始终以全屏 overlay 占据主显示，而非游戏内联小面板。
 window.toggleEdu = () => {
-  if (state.phase === "start") {
-    // Start screen: show as overlay
-    showEduOverlay(`<div class="edu-overlay" onclick="if(event.target===this)window.closeEdu()">${renderEduPanelContent()}</div>`);
-  } else {
-    // In-game: toggle inline panel
-    state.eduPanelOpen = !state.eduPanelOpen;
-    render();
+  const container = document.getElementById("edu-overlay-container");
+  const alreadyOpen = container && container.innerHTML.includes("edu-panel");
+  if (alreadyOpen) {
+    window.closeEdu();
+    return;
   }
+  state.eduPanelOpen = true;
+  showEduOverlay(`<div class="edu-overlay edu-overlay--panel" onclick="if(event.target===this)window.closeEdu()">${renderEduPanelContent()}</div>`);
 };
 
 window.closeEdu = () => {

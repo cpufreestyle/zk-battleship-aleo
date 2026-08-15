@@ -1192,8 +1192,8 @@ body {
 @keyframes tutFade { from { opacity: 0; } to { opacity: 1; } }
 
 .tut-card {
-  position: relative;
-  width: min(440px, 94vw);
+  /* 占主显示：交给 overlay flex 居中，卡片自动拉宽 */
+  width: min(960px, 100%);
   max-height: 92vh;
   overflow-y: auto;
   background: linear-gradient(180deg, var(--bg-panel), #0c1a2c);
@@ -2183,6 +2183,11 @@ body {
 .edu-panel {
   background: var(--bg-panel); border: 1px solid rgba(241,196,15,0.2);
   border-radius: 12px; padding: 20px; margin-bottom: 16px; animation: hintSlide 0.3s ease;
+  /* 全屏 overlay 中占据主显示 —— 宽卡片而非窄卡 */
+  width: min(960px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .edu-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .edu-panel-head h3 { font-size: 0.95rem; color: var(--color-gold); flex: 1; }
