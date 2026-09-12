@@ -54,9 +54,9 @@ export function initWeapons() {
   };
 }
 
-/** 检查武器是否可用 */
+/** 检查武器是否可用（严格布尔，未知 id 返回 false） */
 export function canUseWeapon(weaponState, weaponId) {
-  return weaponState[weaponId] && weaponState[weaponId].remaining > 0;
+  return Boolean(weaponState[weaponId] && weaponState[weaponId].remaining > 0);
 }
 
 /** 消耗武器 */
@@ -81,16 +81,17 @@ export function rollWeather() {
   return "storm";
 }
 
-/** 天气效果：风暴时 10% 概率偏移到相邻格 */
+/** 天气效果：风暴时 10% 概率偏移到相邻格（偏移必须落在不同的界内相邻格） */
 export function applyWeatherEffect(weather, row, col, gridSize) {
   if (weather !== "storm") return { row, col, deviated: false };
   if (Math.random() > 0.1) return { row, col, deviated: false };
-  // 偏移到随机相邻格
-  const deltas = [[-1,0],[1,0],[0,-1],[0,1]];
-  const [dr, dc] = deltas[Math.floor(Math.random() * deltas.length)];
-  const nr = Math.max(0, Math.min(gridSize - 1, row + dr));
-  const nc = Math.max(0, Math.min(gridSize - 1, col + dc));
-  return { row: nr, col: nc, deviated: true };
+  // 只考虑界内 delta，保证偏移后落点 ≠ 原格（边缘/角落不会退化）
+  const inBounds = [[-1,0],[1,0],[0,-1],[0,1]].filter(([dr, dc]) => {
+    const r = row + dr, c = col + dc;
+    return r >= 0 && r < gridSize && c >= 0 && c < gridSize;
+  });
+  const [dr, dc] = inBounds[Math.floor(Math.random() * inBounds.length)];
+  return { row: row + dr, col: col + dc, deviated: true };
 }
 
 /** 天气是否禁用雷达扫描 */
@@ -214,7 +215,7 @@ export function saveRankData(data) {
   } catch (_) {}
 }
 
-/** 记录一局结果到排名 */
+/** 记录一局结果到排名（连胜 ≥3 起有积分加成：3/5/7/10 档 +20/40/60/100，仅胜局生效） */
 export function recordMatch(won, opponentRating = 1000) {
   const data = loadRankData();
   const elo = calculateElo(data.rating, opponentRating, won);
@@ -226,11 +227,18 @@ export function recordMatch(won, opponentRating = 1000) {
     data.losses++;
     data.streak = data.streak <= 0 ? data.streak - 1 : -1;
   }
+  // 连胜积分加成（与 getStreakBonus 口号档位一致）
+  let bonus = 0;
+  if (won && data.streak >= 10) bonus = 100;
+  else if (won && data.streak >= 7) bonus = 60;
+  else if (won && data.streak >= 5) bonus = 40;
+  else if (won && data.streak >= 3) bonus = 20;
+  data.rating += bonus;
   if (data.streak > (data.bestStreak || 0)) data.bestStreak = data.streak;
-  data.history.unshift({ won, rating: data.rating, change: elo.change, time: Date.now() });
+  data.history.unshift({ won, rating: data.rating, change: elo.change + bonus, time: Date.now() });
   if (data.history.length > 20) data.history.pop();
   saveRankData(data);
-  return { ...elo, rank: getRank(data.rating), streak: data.streak };
+  return { ...elo, change: elo.change + bonus, newRating: data.rating, rank: getRank(data.rating), streak: data.streak, bonus };
 }
 
 /** 获取连胜加成描述 */
