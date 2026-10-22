@@ -102,6 +102,8 @@ const state = {
   phase: "start",
   // Game mode: "ai" (vs computer), "pvp" (pass-and-play), or "online" (WebRTC)
   gameMode: "ai",
+  dailyChallenge: false,
+  dailyRecord: false,
   // Online mode state
   onlineState: "idle", // idle | creating | joining | waiting | connected
   onlineRoomCode: "",
@@ -407,18 +409,18 @@ function getMask(row, col) { return 1 << cellToBit(row, col); }
 function isBitSet(bitstring, row, col) { return (bitstring & getMask(row, col)) !== 0; }
 
 // ===== SHIP PLACEMENT =====
-function generateRandomShips() {
+function generateRandomShips(rng = Math.random) {
   let ships = 0;
   const placed = [];
   opponentShipGroups = [];
   for (const ship of SHIPS) {
     let placedShip = false;
     while (!placedShip) {
-      const horizontal = Math.random() < 0.5;
+      const horizontal = rng() < 0.5;
       const maxRow = horizontal ? GRID_SIZE : GRID_SIZE - ship.size;
       const maxCol = horizontal ? GRID_SIZE - ship.size : GRID_SIZE;
-      const row = Math.floor(Math.random() * maxRow);
-      const col = Math.floor(Math.random() * maxCol);
+      const row = Math.floor(rng() * maxRow);
+      const col = Math.floor(rng() * maxCol);
       let bits = 0;
       let overlap = false;
       for (let i = 0; i < ship.size; i++) {
@@ -448,47 +450,11 @@ function generateRandomShips() {
 // neighbors to sink the ship, then fall back to HUNT when candidates run out.
 const ai = { mode: "hunt", targets: [], lastHit: null };
 
-function resetAI() {
-  ai.mode = "hunt";
-  ai.targets = [];
-  ai.lastHit = null;
-}
-
-function chooseOpponentTarget() {
-  const shot = state.opponentShots;
-  const diff = DIFFICULTY[state.difficulty] || DIFFICULTY.normal;
-
-  // Smart targeting after hit (Normal + Hard)
-  if (diff.targetSmart && ai.mode === "target" && ai.targets.length > 0) {
-    while (ai.targets.length > 0) {
-      const bit = ai.targets.pop();
-      if (!(shot & (1 << bit))) return bit;
-    }
-  }
-
-  // Easy: mostly random
-  if (Math.random() < diff.huntRandom) {
-    const avail = [];
-    for (let i = 0; i < TOTAL_CELLS; i++) if (!(shot & (1 << i))) avail.push(i);
-    if (avail.length === 0) return -1;
-    return avail[Math.floor(Math.random() * avail.length)];
-  }
-
-  // Parity hunting (Normal + Hard)
-  const parity = [];
-  const rest = [];
-  for (let i = 0; i < TOTAL_CELLS; i++) {
-    if (shot & (1 << i)) continue;
-    if ((Math.floor(i / GRID_SIZE) + (i % GRID_SIZE)) % 2 === 0) parity.push(i);
-    else rest.push(i);
-  }
-  const pool = parity.length ? parity : rest;
-  if (pool.length === 0) return -1;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
+// resetAI / chooseOpponentTarget / chooseTarget 定义在 handleVictory 之后（见 Spectate 区块）
 
 // ===== GAME LOGIC =====
-async function playerFire(row, col) {
+async function playerFire(row, col, auto = false) {
+  if (state.gameMode === "spectate" && !auto) return; // 观战模式禁止手动开火
   if (state.phase !== "battle" || state.currentTurn !== "player") return;
   if (inputLocked) return;
 
@@ -554,9 +520,7 @@ async function playerFire(row, col) {
     wait(FEEL.SUSPENSE_MS),
   ]);
 
-  addBattle(`你向 ${cellName} 开火`, "me");
-
-  // 手感第 3 拍：结果爆发
+  addBattle(fireLog(cellName), "me");
   let sunkShip = null;
   if (isHit) {
     state.playerHits |= mask;
@@ -566,37 +530,43 @@ async function playerFire(row, col) {
     state.combo++;
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
 
-    // Achievements
-    if (state.playerHits === 1) {
-      unlockAchievement("firstBlood");
-      unlockEduCard("firstHit");
-      triggerEduQuiz("firstHit");
+    // Achievements (blue AI's hits in spectator mode are not the player's)
+    if (state.gameMode !== "spectate") {
+      if (state.playerHits === 1) {
+        unlockAchievement("firstBlood");
+        unlockEduCard("firstHit");
+        triggerEduQuiz("firstHit");
+      }
+      if (state.combo >= 3) unlockAchievement("combo3");
+      if (state.combo >= 5) unlockAchievement("combo5");
     }
-    if (state.combo >= 3) unlockAchievement("combo3");
-    if (state.combo >= 5) unlockAchievement("combo5");
 
     // P2P: check against P2's ship groups; AI: check opponentShipGroups
     const targetGroups = state.gameMode === "pvp" ? state.p2ShipGroups : opponentShipGroups;
     sunkShip = sunkShipBy(targetGroups, state.playerHits, mask);
     if (sunkShip) {
-      addBattle(`🔥 ${cellName} 命中——敌方${sunkShip.cn}已被击沉！`, "hit");
+      const who = state.gameMode === "spectate" ? "红方" : "敌方";
+      addBattle(`🔥 ${cellName} 命中——${who}${sunkShip.cn}已被击沉！`, "hit");
       sfx.sunk();
-      triggerEduQuiz("firstSunk");
+      if (state.gameMode !== "spectate") triggerEduQuiz("firstSunk");
       fx.explode(k, true);
       fx.shake("hard");
-      fx.banner(`击沉 敌方${sunkShip.cn}`, "sunk", 1200);
+      fx.banner(`击沉 ${who}${sunkShip.cn}`, "sunk", 1200);
     } else {
-      addBattle(`💥 ${cellName} 命中！${state.combo > 1 ? "连击 x" + state.combo + "！" : "敌方一艘船受损"}`, "hit");
+      addBattle(`💥 ${cellName} 命中！${state.combo > 1 ? "连击 x" + state.combo + "！" : state.gameMode === "spectate" ? "红方一艘船受损" : "敌方一艘船受损"}`, "hit");
       sfx.hit(false);
       fx.explode(k, false);
       fx.shake("soft");
       if (state.combo >= 2) fx.banner(`🔥 连击 x${state.combo}`, "sunk", 800);
     }
+    // Spectate: update blue AI target tracking
+    if (state.gameMode === "spectate") updateBlueTracking(true, row, col);
   } else {
     addBattle(`🌊 ${cellName} 未中。`, "miss");
     sfx.miss();
     fx.ripple(k);
     state.combo = 0;
+    if (state.gameMode === "spectate") updateBlueTracking(false, row, col);
   }
   render();
 
@@ -607,9 +577,18 @@ async function playerFire(row, col) {
     state.phase = "gameover";
     state.winner = "player";
     // Victory achievements
-    if (state.playerShipsRemaining === TOTAL_SHIP_CELLS) unlockAchievement("perfect");
-    if (state.playerShots === state.playerHits) unlockAchievement("flawless");
+    if (state.gameMode !== "spectate") {
+      if (state.playerShipsRemaining === TOTAL_SHIP_CELLS) unlockAchievement("perfect");
+      if (state.playerShots === state.playerHits) unlockAchievement("flawless");
+    }
+    // Daily challenge: record best (fewest shells to clear today's fleet)
+    if (state.gameMode === "ai" && state.dailyChallenge) {
+      const shots = countBits(state.playerShots);
+      const prev = dailyBest();
+      if (!prev || shots < prev.shots) { saveDailyBest(shots); state.dailyRecord = true; }
+    }
     sfx.victory();
+    fx.fireworks();
     render();
     inputLocked = false;
     return;
@@ -624,6 +603,10 @@ async function playerFire(row, col) {
     // Player keeps firing — don't switch turn, just unlock input
     inputLocked = false;
     render();
+    // Spectate: schedule blue AI's next shot
+    if (state.gameMode === "spectate") {
+      setTimeout(() => spectatorTick(), 900);
+    }
     return;
   }
 
@@ -640,7 +623,8 @@ async function playerFire(row, col) {
   render();
 
   // 回合切换：先预警再挨打，别让对手凭空冒出来
-  fx.banner("⚠ 敌方来袭", "warn", FEEL.INCOMING_MS);
+  const who = state.gameMode === "spectate" ? "⚠ 红方来袭" : "⚠ 敌方来袭";
+  fx.banner(who, "warn", FEEL.INCOMING_MS);
   sfx.incoming();
   setTimeout(() => opponentFire(), FEEL.INCOMING_MS);
 }
@@ -782,6 +766,13 @@ async function executeWeapon(row, col) {
 function handleVictory() {
   state.phase = "gameover";
   state.winner = "player";
+  if (state.gameMode === "spectate") {
+    sfx.victory();
+    fx.fireworks();
+    render();
+    inputLocked = false;
+    return;
+  }
   // Record rank
   const result = recordMatch(true, 1000 + (state.difficulty === "hard" ? 200 : state.difficulty === "easy" ? -100 : 0));
   state.lastRankResult = result;
@@ -794,6 +785,7 @@ function handleVictory() {
     zkProofs: state.zkStats.proofsGenerated,
   });
   sfx.victory();
+  fx.fireworks();
   // Education triggers
   unlockEduCard("firstWin");
   if (state.zkStats.proofsGenerated >= 5) unlockEduCard("fiveProofs");
@@ -808,9 +800,123 @@ function countBits(n) {
   return c;
 }
 
+// ===== 每日挑战（全服同一敌方阵型 · 比拼最少炮弹） =====
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function dailySeed() {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+function dailyBest() {
+  try {
+    const d = JSON.parse(localStorage.getItem("sf_daily_best") || "null");
+    const key = String(dailySeed());
+    if (d && d.key === key) return d;
+  } catch (e) {}
+  return null;
+}
+function saveDailyBest(shots) {
+  try {
+    localStorage.setItem("sf_daily_best", JSON.stringify({ key: String(dailySeed()), shots }));
+  } catch (e) {}
+}
+/** 每日挑战的敌方舰队：用当日种子生成，全服同一阵型 */
+function opponentFleetRng() {
+  return state.gameMode === "ai" && state.dailyChallenge ? mulberry32(dailySeed()) : Math.random;
+}
+
+// ===== 观战模式（AI vs AI） =====
+const aiBlue = { mode: "hunt", targets: [] };
+
+function chooseTarget(shot, aiState) {
+  const diff = DIFFICULTY[state.difficulty] || DIFFICULTY.normal;
+  if (diff.targetSmart && aiState.mode === "target" && aiState.targets.length > 0) {
+    while (aiState.targets.length > 0) {
+      const bit = aiState.targets.pop();
+      if (!(shot & (1 << bit))) return bit;
+    }
+  }
+  if (Math.random() < diff.huntRandom) {
+    const avail = [];
+    for (let i = 0; i < TOTAL_CELLS; i++) if (!(shot & (1 << i))) avail.push(i);
+    if (avail.length === 0) return -1;
+    return avail[Math.floor(Math.random() * avail.length)];
+  }
+  const parity = [];
+  const rest = [];
+  for (let i = 0; i < TOTAL_CELLS; i++) {
+    if (shot & (1 << i)) continue;
+    if ((Math.floor(i / GRID_SIZE) + (i % GRID_SIZE)) % 2 === 0) parity.push(i);
+    else rest.push(i);
+  }
+  const pool = parity.length ? parity : rest;
+  if (pool.length === 0) return -1;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function chooseOpponentTarget() {
+  return chooseTarget(state.opponentShots, ai);
+}
+
+function resetAI() {
+  ai.mode = "hunt";
+  ai.targets = [];
+  ai.lastHit = null;
+  aiBlue.mode = "hunt";
+  aiBlue.targets = [];
+}
+
+/** 观战模式下一拍：轮到蓝方（player 侧）AI 开火 */
+function spectatorTick() {
+  if (state.phase !== "battle" || state.gameMode !== "spectate") return;
+  if (inputLocked) return;
+  const bit = chooseTarget(state.playerShots, aiBlue);
+  if (bit === -1) return;
+  const r = Math.floor(bit / GRID_SIZE);
+  const c = bit % GRID_SIZE;
+  playerFire(r, c, true);
+}
+
+/** 观战模式下蓝方命中后的目标追踪（与红方 opponentFire 对称） */
+function updateBlueTracking(isHit, row, col) {
+  if (!isHit) {
+    if (aiBlue.mode === "target" && aiBlue.targets.length === 0) aiBlue.mode = "hunt";
+    return;
+  }
+  aiBlue.mode = "target";
+  const b0 = cellToBit(row, col);
+  aiBlue.targets = aiBlue.targets.filter((b) => b !== b0);
+  const neigh = [[row - 1, col], [row + 1, col], [row, col - 1], [row, col + 1]];
+  for (const [nr, nc] of neigh) {
+    if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) continue;
+    const b = nr * GRID_SIZE + nc;
+    if (!(state.playerShots & (1 << b)) && !aiBlue.targets.includes(b)) aiBlue.targets.push(b);
+  }
+}
+
+/** 观战模式的战报整句（避免"蓝方向"歧义） */
+function fireLog(cellName) {
+  return state.gameMode === "spectate"
+    ? `🔵 蓝方向 ${cellName} 开火`
+    : `你向 ${cellName} 开火`;
+}
+
 function handleDefeat() {
   state.phase = "gameover";
   state.winner = "opponent";
+  if (state.gameMode === "spectate") {
+    sfx.defeat();
+    fx.fireworks();
+    render();
+    inputLocked = false;
+    return;
+  }
   // Record rank (only meaningful in AI mode)
   if (state.gameMode === "ai") {
     state.lastRankResult = recordMatch(false, 1000 + (state.difficulty === "hard" ? 200 : state.difficulty === "easy" ? -100 : 0));
@@ -960,25 +1066,26 @@ async function opponentFire() {
     wait(FEEL.SUSPENSE_MS),
   ]);
 
-  addBattle(`对手向 ${cellName} 开火`, "opp");
+  const isSpectateHere = state.gameMode === "spectate";
+  addBattle(isSpectateHere ? `🔴 红方向 ${cellName} 开火` : `对手向 ${cellName} 开火`, "opp");
   let sunkShip = null;
   if (isHit) {
     state.opponentHits |= mask;
     state.playerShipsRemaining--;
     sunkShip = sunkShipBy(playerShipGroups, state.opponentHits, mask);
     if (sunkShip) {
-      addBattle(`🔥 你的${sunkShip.cn}被击沉！`, "hit");
+      addBattle(isSpectateHere ? `🔥 蓝方的${sunkShip.cn}被击沉！` : `🔥 你的${sunkShip.cn}被击沉！`, "hit");
       sfx.sunk();
       fx.explode(k, true);
       fx.shake("hard");
-      fx.banner(`我方${sunkShip.cn} 沉没`, "loss", 1200);
+      fx.banner(`${isSpectateHere ? "蓝方" : "我方"}${sunkShip.cn} 沉没`, "loss", 1200);
     } else {
-      addBattle(`💥 你的 ${cellName} 中弹！`, "hit");
+      addBattle(isSpectateHere ? `💥 蓝方 ${cellName} 中弹！` : `💥 你的 ${cellName} 中弹！`, "hit");
       sfx.hit(false);
       fx.explode(k, false);
       fx.shake("soft");
       // Opponent combo — keeps firing on hit (same rule as player)
-      fx.banner("⚠ 敌方连击！", "warn", 800);
+      fx.banner(isSpectateHere ? "⚠ 红方连击！" : "⚠ 敌方连击！", "warn", 800);
     }
     ai.mode = "target";
     ai.targets = ai.targets.filter(b => b !== target);
@@ -989,7 +1096,7 @@ async function opponentFire() {
       if (!(state.opponentShots & (1 << b)) && !ai.targets.includes(b)) ai.targets.push(b);
     }
   } else {
-    addBattle(`🌊 对手 ${cellName} 未中。`, "miss");
+    addBattle(isSpectateHere ? `🌊 红方 ${cellName} 未中。` : `🌊 对手 ${cellName} 未中。`, "miss");
     sfx.miss();
     fx.ripple(k);
     if (ai.mode === "target" && ai.targets.length === 0) ai.mode = "hunt";
@@ -1010,7 +1117,8 @@ async function opponentFire() {
   // Opponent combo: hit = keep firing (same rule as player), miss = player's turn
   if (isHit) {
     // Opponent fires again after a short delay
-    fx.banner("⚠ 敌方继续射击", "warn", FEEL.INCOMING_MS);
+    const msg = state.gameMode === "spectate" ? "⚠ 红方继续射击" : "⚠ 敌方继续射击";
+    fx.banner(msg, "warn", FEEL.INCOMING_MS);
     sfx.incoming();
     setTimeout(() => opponentFire(), FEEL.INCOMING_MS);
     return;
@@ -1019,6 +1127,12 @@ async function opponentFire() {
   state.currentTurn = "player";
   render();
   inputLocked = false;
+
+  // Spectate: schedule blue AI's next shot
+  if (state.gameMode === "spectate") {
+    fx.banner("🔵 蓝方思考中…", "warn", 800);
+    setTimeout(() => spectatorTick(), FEEL.INCOMING_MS);
+  }
 }
 
 // ===== SHIP PLACEMENT UI =====
@@ -1108,7 +1222,7 @@ function handlePlacementClick(row, col) {
     }
 
     // AI mode: generate opponent ships and start battle
-    state.opponentShips = generateRandomShips();
+    state.opponentShips = generateRandomShips(opponentFleetRng());
     state.phase = "battle";
     resetAI();
     addBattle(`你放置了 ${placedName}`, "me");
@@ -1165,7 +1279,7 @@ function randomPlaceShips() {
   }
 
   // AI mode
-  state.opponentShips = generateRandomShips();
+  state.opponentShips = generateRandomShips(opponentFleetRng());
   state.phase = "battle";
   resetAI();
   sfx.place();
@@ -1346,7 +1460,7 @@ function renderStart() {
 
         <div class="config-section">
           <div class="config-label">🎮 对战模式 / Game Mode</div>
-          <div class="mode-options mode-options-3">
+          <div class="mode-options mode-options-4">
             <button class="mode-btn${state.gameMode === "ai" ? " is-active" : ""}" onclick="window.selectMode('ai')">
               <span class="mode-name">🤖 vs AI</span>
               <span class="mode-desc">对战电脑</span>
@@ -1356,8 +1470,12 @@ function renderStart() {
               <span class="mode-desc">轮流 · ZK防偷看</span>
             </button>
             <button class="mode-btn${state.gameMode === "online" ? " is-active" : ""}" onclick="window.selectMode('online')">
-              <span class="mode-name">🌐 联机</span>
-              <span class="mode-desc">互联网对战</span>
+              <span class="mode-name">🌐 互联网联机</span>
+              <span class="mode-desc">PeerJS · 房间号</span>
+            </button>
+            <button class="mode-btn${state.gameMode === "spectate" ? " is-active" : ""}" onclick="window.selectMode('spectate')">
+              <span class="mode-name">👁 AI 决斗</span>
+              <span class="mode-desc">观战双 AI</span>
             </button>
           </div>
         </div>
@@ -1367,6 +1485,20 @@ function renderStart() {
           <div class="config-label">⚔️ 难度 / Difficulty (Best of 3)</div>
           <div class="diff-options">${diffOpts}</div>
           <div class="config-desc">${DIFFICULTY[state.difficulty].desc}</div>
+        </div>
+        <div class="config-section">
+          <div class="config-label">📅 每日挑战</div>
+          <label class="daily-toggle">
+            <input type="checkbox" ${state.dailyChallenge ? "checked" : ""} onchange="window.toggleDaily(this.checked)" />
+            <span>全服同一敌方阵型 · 比拼最少炮弹数</span>
+          </label>
+          ${(() => { const b = dailyBest(); return b ? `<div class="daily-best">🏆 今日最佳：${b.shots} 炮</div>` : `<div class="daily-best daily-best--empty">今日尚无纪录 · 来抢首杀！</div>`; })()}
+        </div>` : state.gameMode === "spectate" ? `
+        <div class="config-section">
+          <div class="zk-pvp-note">
+            <b>👁 AI 决斗观战</b><br>
+            两位 AI 指挥官（🔵蓝方 vs 🔴红方）各自使用 ZK 证明实时对战。双方船位全程加密，你只能看到命中/未中结果和证明流。欣赏 AI 战术博弈，学习策略思路。
+          </div>
         </div>` : state.gameMode === "pvp" ? `
         <div class="config-section">
           <div class="zk-pvp-note">
@@ -1466,6 +1598,11 @@ window.selectMode = (mode) => {
     state.onlineState = "idle";
   }
   state.gameMode = mode;
+  sfx.click();
+  render();
+};
+window.toggleDaily = (v) => {
+  state.dailyChallenge = !!v;
   sfx.click();
   render();
 };
@@ -1870,7 +2007,7 @@ function renderGrid(side) {
 
       const clickable =
         (state.phase === "placement" && isPlayer) ||
-        (state.phase === "battle" && !isPlayer && state.currentTurn === "player" && (state.scanMode || !isBitSet(shots, r, c))) ||
+        (state.phase === "battle" && state.gameMode !== "spectate" && !isPlayer && state.currentTurn === "player" && (state.scanMode || !isBitSet(shots, r, c))) ||
         (state.phase === "battle" && isPlayer && state.gameMode === "pvp" && state.currentTurn === "opponent" && !isBitSet(shots, r, c));
       if (clickable) cls += " cell-clickable";
       if (state.scanMode && !isPlayer) cls += " cell-scan-target";
@@ -1941,7 +2078,11 @@ function renderStatusBar() {
       : "";
     status = `🚢 ${playerLabel}部署阶段 — 放完 ${SHIPS.length} 艘船即可开战`;
   } else if (state.phase === "battle") {
-    if (state.scanMode) {
+    if (state.gameMode === "spectate") {
+      status = state.currentTurn === "player"
+        ? "👁 🔵 蓝方开火中…"
+        : "👁 🔴 红方开火中…";
+    } else if (state.scanMode) {
       status = "📡 扫描模式 — 点击敌方海域选择扫描中心";
     } else if (state.gameMode === "pvp") {
       status = state.currentTurn === "player" ? "🎯 玩家 1 回合 — 点击敌方海域开火" : "🎯 玩家 2 回合 — 点击对方海域开火";
@@ -1959,6 +2100,11 @@ function renderStatusBar() {
     ? `<span class="combo-badge">🔥 连击 x${state.combo}</span>`
     : "";
 
+  // Daily challenge indicator
+  const dailyBadge = state.gameMode === "ai" && state.dailyChallenge
+    ? `<span class="daily-badge" title="全服同一敌方阵型">📅 每日挑战</span>`
+    : "";
+
   // Weather indicator
   const w = WEATHER[state.weather];
   const weatherBadge = state.phase === "battle"
@@ -1967,13 +2113,15 @@ function renderStatusBar() {
 
   // ZK Radar Scan button
   const scanDisabled = isScanDisabled(state.weather);
-  const scanBtn = state.phase === "battle" && state.currentTurn === "player" && state.scansRemaining > 0 && !scanDisabled
-    ? `<button class="scan-btn${state.scanMode ? " is-active" : ""}" onclick="window.activateScan()">📡 ZK 雷达扫描</button>`
-    : scanDisabled && state.phase === "battle"
-      ? '<span class="scan-btn scan-btn--used">🌫️ 雾天·扫描失效</span>'
-      : state.scansRemaining === 0 && state.phase === "battle"
-        ? '<span class="scan-btn scan-btn--used">✅ 扫描已用</span>'
-        : "";
+  const scanBtn = state.gameMode === "spectate"
+    ? ""
+    : state.phase === "battle" && state.currentTurn === "player" && state.scansRemaining > 0 && !scanDisabled
+      ? `<button class="scan-btn${state.scanMode ? " is-active" : ""}" onclick="window.activateScan()">📡 ZK 雷达扫描</button>`
+      : scanDisabled && state.phase === "battle"
+        ? '<span class="scan-btn scan-btn--used">🌫️ 雾天·扫描失效</span>'
+        : state.scansRemaining === 0 && state.phase === "battle"
+          ? '<span class="scan-btn scan-btn--used">✅ 扫描已用</span>'
+          : "";
 
   // Special weapons buttons
   const weaponBtns = state.phase === "battle" && state.currentTurn === "player" && state.gameMode === "ai"
@@ -2011,7 +2159,7 @@ function renderStatusBar() {
     </label>`;
 
   return `
-    <div class="status-left">${status} ${comboBadge} ${weatherBadge}</div>
+    <div class="status-left">${status} ${comboBadge} ${dailyBadge} ${weatherBadge}</div>
     <div class="status-right">
       ${scanBtn}
       ${weaponBtns ? `<div class="weapon-bar">${weaponBtns}</div>` : ""}
@@ -2634,7 +2782,9 @@ function renderBattleFeed() {
   return `
     <div class="battle-feed-head">
       <h3>⚔ 战斗实况 ${state.matchRound > 0 || state.matchWins > 0 || state.matchLosses > 0 ? `<span class="match-score">(${state.matchWins}:${state.matchLosses})</span>` : ""}</h3>
-      <span class="battle-score">敌方舰剩 ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS} · 我方舰剩 ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}</span>
+      <span class="battle-score">${state.gameMode === "spectate"
+        ? `🔴 红方舰剩 ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS} · 🔵 蓝方舰剩 ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}`
+        : `敌方舰剩 ${state.opponentShipsRemaining}/${TOTAL_SHIP_CELLS} · 我方舰剩 ${state.playerShipsRemaining}/${TOTAL_SHIP_CELLS}`}</span>
     </div>
     <div class="battle-list">${list}</div>`;
 }
@@ -2650,20 +2800,25 @@ function renderGameOver() {
   const stars = efficiency >= 80 ? "⭐⭐⭐" : efficiency >= 50 ? "⭐⭐" : efficiency >= 30 ? "⭐" : "";
   const ratingLabel = efficiency >= 80 ? "完美" : efficiency >= 50 ? "优秀" : efficiency >= 30 ? "及格" : "待提升";
 
-  // Check if match is decided (best of 3)
-  const matchDecided = state.matchWins >= 2 || state.matchLosses >= 2;
+  const isSpectate = state.gameMode === "spectate";
+  const blueWon = state.winner === "player";
+
+  // Check if match is decided (best of 3) — spectator duels are single rounds
+  const matchDecided = !isSpectate && (state.matchWins >= 2 || state.matchLosses >= 2);
   const matchWon = state.matchWins >= 2;
 
   // Update match score on round end
-  if (state.winner === "player" && !state.matchOver) {
-    state.matchWins++;
-    state.matchOver = matchDecided;
-  } else if (state.winner === "opponent" && !state.matchOver) {
-    state.matchLosses++;
-    state.matchOver = matchDecided;
+  if (!isSpectate) {
+    if (state.winner === "player" && !state.matchOver) {
+      state.matchWins++;
+      state.matchOver = matchDecided;
+    } else if (state.winner === "opponent" && !state.matchOver) {
+      state.matchLosses++;
+      state.matchOver = matchDecided;
+    }
   }
 
-  const matchScoreBar = `
+  const matchScoreBar = isSpectate ? "" : `
     <div class="go-match-bar">
       <div class="go-match-side ${state.winner === "player" ? "is-win" : ""}">
         <span class="go-match-label">你</span>
@@ -2682,21 +2837,52 @@ function renderGameOver() {
 
   const actionBtn = matchDecided
     ? '<button class="restart-btn" onclick="window.restart()">返回主菜单</button>'
-    : `<button class="restart-btn" onclick="window.nextRound()">下一局 →</button>
+    : state.gameMode === "spectate"
+      ? `<button class="restart-btn" onclick="window.nextRound()">再来一局观战 →</button>
+         <button class="restart-btn restart-btn--alt" onclick="window.restart()">返回主菜单</button>`
+      : `<button class="restart-btn" onclick="window.nextRound()">下一局 →</button>
        <button class="restart-btn restart-btn--alt" onclick="window.restart()">放弃比赛</button>`;
+
+  const title = isSpectate
+    ? (blueWon ? "🔵 蓝方胜利" : "🔴 红方胜利")
+    : (blueWon ? "🏆 胜 利" : "💀 战 败");
+  const subtitle = isSpectate
+    ? (blueWon ? "🔵 蓝方 AI 清空了红方海域。" : "🔴 红方 AI 笑到了最后。")
+    : (blueWon ? "敌方舰队已被你全部击沉！" : "你的舰队全军覆没。");
+
+  // Daily challenge result row
+  const dailyRow = state.gameMode === "ai" && state.dailyChallenge
+    ? (() => {
+        const best = dailyBest();
+        if (blueWon) {
+          const shots = countBits(state.playerShots);
+          return `<div class="go-daily">
+            <div class="go-daily-title">📅 每日挑战</div>
+            <div class="go-daily-body">
+              本局 <b>${shots}</b> 炮清场${state.dailyRecord ? ' · <span class="go-daily-record">🎉 今日新纪录！</span>' : ` · 今日最佳 <b>${best ? best.shots : shots}</b> 炮`}
+            </div>
+          </div>`;
+        }
+        return `<div class="go-daily go-daily--fail">
+          <div class="go-daily-title">📅 每日挑战</div>
+          <div class="go-daily-body">挑战失败 · 今日最佳 ${best ? `<b>${best.shots}</b> 炮` : "暂无纪录"}</div>
+        </div>`;
+      })()
+    : "";
 
   return `
     <div class="game-over-overlay">
-      <div class="game-over-modal ${state.winner === "player" ? "over-win" : "over-lose"}">
-        <h2>${state.winner === "player" ? "🏆 胜 利" : "💀 战 败"}</h2>
-        <p>${state.winner === "player" ? "敌方舰队已被你全部击沉！" : "你的舰队全军覆没。"}</p>
+      <div class="game-over-modal ${blueWon ? "over-win" : "over-lose"}">
+        <h2>${title}</h2>
+        <p>${subtitle}</p>
         ${matchScoreBar}
         ${matchResult}
         <div class="go-efficiency">
-          <span class="go-eff-stars">${stars}</span>
-          <span class="go-eff-label">效率 ${ratingLabel}</span>
+          <span class="go-eff-stars">${isSpectate ? "👁" : stars}</span>
+          <span class="go-eff-label">${isSpectate ? "观战" : "效率 " + ratingLabel}</span>
           <span class="go-eff-detail">${state.turnCount} 回合 / ${TOTAL_SHIP_CELLS} 命中</span>
         </div>
+        ${dailyRow}
         <div class="go-blockchain-summary">
           <div class="go-bc-title">⛓ Blockchain Summary</div>
           <div class="go-bc-stats">
@@ -2759,7 +2945,49 @@ window.startGame = () => {
   state.matchLosses = 0;
   state.matchRound = 0;
   state.matchOver = false;
-  // PvP: start with P1 placement + privacy screen
+
+  // Spectate: auto-place both fleets, jump straight to battle
+  if (state.gameMode === "spectate") {
+    state.phase = "battle";
+    resetRoundState();
+    // Place blue fleet (playerShips)
+    for (const ship of SHIPS) {
+      let placed = false;
+      while (!placed) {
+        const horizontal = Math.random() < 0.5;
+        const maxRow = horizontal ? GRID_SIZE : GRID_SIZE - ship.size;
+        const maxCol = horizontal ? GRID_SIZE - ship.size : GRID_SIZE;
+        const row = Math.floor(Math.random() * maxRow);
+        const col = Math.floor(Math.random() * maxCol);
+        let bits = 0, overlap = false;
+        for (let i = 0; i < ship.size; i++) {
+          const r = horizontal ? row : row + i;
+          const c = horizontal ? col + i : col;
+          const bit = cellToBit(r, c);
+          if (state.playerShips & (1 << bit)) { overlap = true; break; }
+          bits |= (1 << bit);
+        }
+        if (!overlap) {
+          state.playerShips |= bits;
+          playerShipGroups.push({ name: ship.name, cn: ship.cn, mask: bits });
+          state.placingShipIndex++;
+          placed = true;
+        }
+      }
+    }
+    // Place red fleet (opponentShips)
+    state.opponentShips = generateRandomShips();
+    state.currentTurn = "player";
+    addBattle("👁 观战模式：🔵 蓝方 vs 🔴 红方 AI 指挥官", "sys");
+    addBattle("双方船位均由 ZK 证明加密保护", "sys");
+    fx.banner("👁 AI 决斗观战", "sunk", 1800);
+    render();
+    setTimeout(() => spectatorTick(), FEEL.INCOMING_MS * 2);
+    return;
+  }
+
+  state.phase = "placement";
+  resetRoundState();
   if (state.gameMode === "pvp") {
     state.p2pPlacementPhase = "p1";
     state.p2Ships = 0;
@@ -2771,13 +2999,9 @@ window.startGame = () => {
     state.p2Combo = 0;
     state.p2MaxCombo = 0;
     state.showPrivacyScreen = true;
-    state.phase = "placement";
-    resetRoundState();
     render();
     return;
   }
-  state.phase = "placement";
-  resetRoundState();
   render();
 };
 function resetRoundState() {
@@ -2803,6 +3027,7 @@ function resetRoundState() {
   state.scanMode = false;
   state.scansRemaining = 1;
   state.achievements = [];
+  state.dailyRecord = false;
   state.turnCount = 0;
   // P2P reset
   state.p2Ships = 0;
@@ -2849,6 +3074,10 @@ window.restart = () => {
     return;
   }
   // Otherwise start next round
+  if (state.gameMode === "spectate") {
+    window.startGame();
+    return;
+  }
   state.phase = "placement";
   resetRoundState();
   render();
@@ -2859,6 +3088,10 @@ window.nextRound = () => {
   sfx.click();
   fx.clear();
   inputLocked = false;
+  if (state.gameMode === "spectate") {
+    window.startGame();
+    return;
+  }
   state.matchRound++;
   state.phase = "placement";
   resetRoundState();
@@ -2883,6 +3116,9 @@ ZKGPU.init().then(ok => {
 
 // ===== 状态桥接到 MCP =====
 syncState(state);
+
+// 只读状态镜像：供浏览器自动化与调试读取（不提供任何写入入口）
+window.__sf = { get state() { return state; } };
 
 // 打开即开始页，无需 loading 引导。ZK 引擎在后台异步加载，
 // 就绪（或失败降级）由下方事件监听更新状态并局部刷新，不挡玩家。

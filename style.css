@@ -1885,6 +1885,46 @@ body {
 .config-label { font-size: var(--fs-sm); font-weight: 700; color: var(--color-strong); margin-bottom: 8px; }
 .config-desc { font-size: var(--fs-xs); color: var(--color-muted); margin-top: 6px; }
 
+/* ---------- Daily Challenge ---------- */
+.daily-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: rgba(241, 196, 15, 0.05);
+  font-size: var(--fs-sm);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.daily-toggle:hover { border-color: var(--color-gold); background: rgba(241, 196, 15, 0.1); }
+.daily-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-gold);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.daily-toggle span { line-height: 1.45; }
+.daily-best {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--color-gold);
+  background: rgba(241, 196, 15, 0.1);
+  border: 1px solid rgba(241, 196, 15, 0.32);
+}
+.daily-best--empty {
+  color: var(--color-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
 /* Difficulty buttons */
 .diff-options { display: flex; gap: 8px; }
 .diff-btn {
@@ -1987,8 +2027,28 @@ body {
 .go-eff-label { font-size: var(--fs-sm); font-weight: 700; color: var(--color-gold); }
 .go-eff-detail { font-size: var(--fs-xs); color: var(--color-muted); }
 
+/* ---------- Daily Challenge Result ---------- */
+.go-daily {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--r-sm);
+  background: rgba(241, 196, 15, 0.08);
+  border: 1px solid rgba(241, 196, 15, 0.28);
+  text-align: center;
+}
+.go-daily--fail {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--border);
+}
+.go-daily-title { font-size: var(--fs-xs); font-weight: 700; color: var(--color-gold); margin-bottom: 4px; }
+.go-daily--fail .go-daily-title { color: var(--color-muted); }
+.go-daily-body { font-size: var(--fs-sm); color: var(--color-text); }
+.go-daily-body b { color: var(--color-gold); font-size: var(--fs-md); }
+.go-daily-record { color: var(--safe); font-weight: 800; }
+
 /* ---------- Game Over Actions ---------- */
-.go-actions { display: flex; gap: 8px; justify-content: center; }
+.go-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.go-actions .restart-btn { white-space: nowrap; padding: 12px 22px; }
 .restart-btn--alt {
   background: transparent;
   border: 1px solid var(--border);
@@ -2002,6 +2062,9 @@ body {
 
 /* ---------- Mode Selection Buttons ---------- */
 .mode-options { display: flex; gap: 8px; }
+/* 四个模式（vs AI / 同设备 / 联机 / 观战）在小屏上换行排布 */
+.mode-options-4 { flex-wrap: wrap; }
+.mode-options-4 .mode-btn { flex: 1 1 calc(50% - 4px); min-width: 132px; }
 .mode-btn {
   flex: 1;
   padding: 12px 10px;
@@ -2141,6 +2204,19 @@ body {
   background: rgba(52, 152, 219, 0.1);
   color: var(--color-accent);
   border: 1px solid rgba(52, 152, 219, 0.2);
+}
+
+.daily-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(241, 196, 15, 0.12);
+  color: var(--color-gold);
+  border: 1px solid rgba(241, 196, 15, 0.35);
 }
 
 /* ===== RANK BADGE ===== */

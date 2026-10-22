@@ -161,6 +161,36 @@ export function ripple(cellKey) {
   spawn(cellKey, "fx-ripple", 820, 6, '<i></i><i class="fx-ripple-late"></i>');
 }
 
+/** 胜利烟花：在敌方海域随机格连续炸出礼花 */
+export function fireworks(bursts = 8, interval = 300) {
+  const N = 5; // 5x5 grid
+  const cells = [];
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) cells.push(key("opponent", r, c));
+  for (let i = 0; i < bursts; i++) {
+    setTimeout(() => {
+      const k = cells[Math.floor(Math.random() * cells.length)];
+      spawn(k, "fx-blast fx-blast-big", 900, 16);
+      const count = 12, spread = 52;
+      let shards = "";
+      for (let j = 0; j < count; j++) {
+        const a = (Math.PI * 2 * j) / count + Math.random() * 0.5;
+        const d = spread + Math.random() * 30;
+        shards +=
+          '<i class="fx-shard" style="--dx:' +
+          (Math.cos(a) * d).toFixed(1) +
+          "px;--dy:" +
+          (Math.sin(a) * d).toFixed(1) +
+          "px;--dly:" +
+          (Math.random() * 70).toFixed(0) +
+          'ms"></i>';
+      }
+      spawn(k, "fx-shards", 940, 0, shards);
+      if (i % 3 === 2) spawn(k, "fx-ring", 900, 12);
+    }, i * interval);
+  }
+}
+
 /**
  * 屏幕震动。
  * 挂在 #app 上 —— 该元素本体不会被 render() 替换，动画类能存活。
